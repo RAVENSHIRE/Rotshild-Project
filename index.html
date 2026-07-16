@@ -1,0 +1,1019 @@
+<title>Rotshild Quant Desk</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #07090c;
+    --panel: #0e1218;
+    --panel-raise: #131a22;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --hairline-strong: rgba(255, 255, 255, 0.14);
+    --ink: #e6eaf0;
+    --ink-2: #98a2ae;
+    --ink-3: #5d6875;
+    --grid: #1b222b;
+    --baseline: #2a333e;
+    --amber: #c07f14;      /* series 1 — portfolio */
+    --amber-ui: #e8a33d;   /* UI accent (text-weight only) */
+    --cyan: #2792b8;       /* series 2 — benchmark */
+    --up: #2fb45a;
+    --down: #e0524d;
+    --dd: #d0484a;         /* drawdown semantic red */
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, Menlo, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  html { background: var(--bg); }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 16px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* ---------- top status bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    border-bottom: 1px solid var(--hairline-strong);
+    padding-bottom: 12px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .brand h1 {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    margin: 0;
+  }
+  .brand h1 .desk { color: var(--amber-ui); }
+  .badge-sim {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--amber-ui);
+    border: 1px solid rgba(232, 163, 61, 0.45);
+    padding: 2px 7px;
+    border-radius: 3px;
+  }
+  .asof {
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .asof .live { color: var(--up); }
+
+  /* ---------- stat tiles ---------- */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 980px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 12px 14px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .tile .label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .tile .value {
+    font-size: 21px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .tile .delta { font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+  .pos { color: var(--up); }
+  .neg { color: var(--down); }
+
+  /* ---------- panels ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 14px 16px 12px;
+    min-width: 0;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .panel-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 0;
+  }
+  .panel-sub { font-size: 10px; letter-spacing: 0.06em; color: var(--ink-3); }
+
+  /* ---------- filter row ---------- */
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .filter-row .flabel {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .ranges { display: flex; gap: 4px; }
+  .ranges button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink-2);
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 3px;
+    padding: 4px 11px;
+    cursor: pointer;
+  }
+  .ranges button:hover { background: rgba(255, 255, 255, 0.04); }
+  .ranges button[aria-pressed="true"] {
+    color: var(--amber-ui);
+    border-color: rgba(232, 163, 61, 0.5);
+    background: rgba(192, 127, 20, 0.10);
+  }
+  .ranges button:focus-visible,
+  th button:focus-visible,
+  .chart-hit:focus-visible {
+    outline: 2px solid var(--amber-ui);
+    outline-offset: 1px;
+  }
+
+  /* ---------- charts ---------- */
+  .legend { display: flex; gap: 18px; align-items: center; }
+  .legend .key { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-2); }
+  .legend .stroke { width: 16px; height: 0; border-top: 2px solid; border-radius: 1px; }
+
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; height: auto; }
+  .chart-hit { position: absolute; inset: 0; cursor: crosshair; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--panel-raise);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 11px;
+    min-width: 150px;
+    z-index: 5;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+  .tooltip .tt-date {
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+  .tooltip .tt-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+    margin-top: 2px;
+  }
+  .tooltip .tt-left { display: flex; align-items: center; gap: 7px; }
+  .tooltip .tt-key { width: 12px; height: 0; border-top: 2px solid; border-radius: 1px; }
+  .tooltip .tt-name { color: var(--ink-2); }
+  .tooltip .tt-val { color: var(--ink); font-weight: 700; }
+
+  /* ---------- lower grid ---------- */
+  .lower {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 900px) { .lower { grid-template-columns: 1fr; } }
+
+  /* ---------- holdings table ---------- */
+  .table-scroll { overflow-x: auto; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  thead th {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: right;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--hairline-strong);
+    font-weight: 600;
+  }
+  thead th.txt { text-align: left; }
+  th button {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    gap: 5px;
+    align-items: baseline;
+    letter-spacing: inherit;
+  }
+  th button:hover { color: var(--ink-2); }
+  th .arrow { font-size: 9px; visibility: hidden; }
+  th[aria-sort] .arrow { visibility: visible; color: var(--amber-ui); }
+  tbody td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--hairline);
+    color: var(--ink);
+    font-size: 12px;
+  }
+  tbody td.txt { text-align: left; }
+  tbody td.dim { color: var(--ink-2); }
+  tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+  td .tkr { font-weight: 700; letter-spacing: 0.06em; }
+
+  /* ---------- sector bars ---------- */
+  .sectors { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
+  .sector-row { display: grid; grid-template-columns: 92px 1fr 48px; gap: 10px; align-items: center; }
+  .sector-row .sname { font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sector-row .track { height: 14px; position: relative; }
+  .sector-row .bar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: var(--amber);
+    border-radius: 0 4px 4px 0;
+  }
+  .sector-row .sval { font-size: 11px; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---------- global markets table ---------- */
+  .cc {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--ink-2);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 3px;
+    padding: 2px 5px;
+    margin-right: 9px;
+    vertical-align: 1px;
+  }
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    padding: 2px 7px;
+    border: 1px solid;
+  }
+  .chip.pos { background: rgba(47, 180, 90, 0.10); border-color: rgba(47, 180, 90, 0.35); }
+  .chip.neg { background: rgba(224, 82, 77, 0.10); border-color: rgba(224, 82, 77, 0.35); }
+  #markets tbody tr { cursor: pointer; }
+  #markets tbody tr[aria-selected="true"] {
+    background: rgba(192, 127, 20, 0.08);
+    box-shadow: inset 2px 0 0 var(--amber);
+  }
+  #markets .iname { font-weight: 700; }
+  #markets .icountry { font-size: 10px; color: var(--ink-3); }
+
+  /* ---------- monthly grid ---------- */
+  .monthly-scroll { overflow-x: auto; }
+  table.monthly td, table.monthly th { padding: 5px 8px; font-size: 11px; }
+  table.monthly tbody th {
+    text-align: left;
+    color: var(--ink-2);
+    font-weight: 700;
+    border-bottom: 1px solid var(--hairline);
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  table.monthly td { border-bottom: 1px solid var(--hairline); }
+  table.monthly td.ytd { border-left: 1px solid var(--hairline-strong); font-weight: 700; }
+  table.monthly td.blank { color: var(--ink-3); }
+
+  /* ---------- footer ---------- */
+  .foot {
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--ink-3);
+    border-top: 1px solid var(--hairline);
+    padding-top: 12px;
+    line-height: 1.6;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ranges button, tbody tr { transition: background-color 120ms ease; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>ROTSHILD CAPITAL <span class="desk">/ QUANT DESK</span></h1>
+      <span class="badge-sim">SIMULATED DATA</span>
+    </div>
+    <div class="asof">
+      <span>MULTI-STRAT EQUITY · USD</span>
+      <span id="asof-date">AS OF —</span>
+      <span class="live">● SESSION CLOSED</span>
+    </div>
+  </header>
+
+  <section class="tiles" id="tiles" aria-label="Key portfolio statistics"></section>
+
+  <div class="filter-row" role="group" aria-label="Chart time range">
+    <span class="flabel">Range</span>
+    <div class="ranges" id="ranges">
+      <button data-days="21" aria-pressed="false">1M</button>
+      <button data-days="63" aria-pressed="false">3M</button>
+      <button data-days="126" aria-pressed="false">6M</button>
+      <button data-days="252" aria-pressed="true">1Y</button>
+      <button data-days="0" aria-pressed="false">ALL</button>
+    </div>
+    <span class="panel-sub">Scopes both charts below · rebased to 100 at range start</span>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Equity curve — portfolio vs benchmark</h2>
+      <div class="legend">
+        <span class="key"><span class="stroke" style="border-color: var(--amber)"></span>Portfolio</span>
+        <span class="key"><span class="stroke" style="border-color: var(--cyan)"></span>Benchmark</span>
+      </div>
+    </div>
+    <div class="chart-box" id="eq-box">
+      <svg id="eq-svg" role="img" aria-label="Indexed equity curve of portfolio and benchmark"></svg>
+      <div class="chart-hit" id="eq-hit" tabindex="0"
+           aria-label="Equity chart. Use left and right arrow keys to inspect values."></div>
+      <div class="tooltip" id="eq-tt"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Drawdown</h2>
+      <span class="panel-sub">From running peak within the selected range</span>
+    </div>
+    <div class="chart-box" id="dd-box">
+      <svg id="dd-svg" role="img" aria-label="Portfolio drawdown from running peak"></svg>
+      <div class="chart-hit" id="dd-hit" tabindex="0"
+           aria-label="Drawdown chart. Use left and right arrow keys to inspect values."></div>
+      <div class="tooltip" id="dd-tt"></div>
+    </div>
+  </section>
+
+  <div class="lower">
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">Holdings</h2>
+        <span class="panel-sub">Top positions · click a column to sort</span>
+      </div>
+      <div class="table-scroll">
+        <table id="holdings">
+          <thead><tr id="holdings-head"></tr></thead>
+          <tbody id="holdings-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">Sector allocation</h2>
+        <span class="panel-sub">% of NAV</span>
+      </div>
+      <div class="sectors" id="sectors"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Monthly returns — portfolio</h2>
+      <span class="panel-sub">Net, %</span>
+    </div>
+    <div class="monthly-scroll">
+      <table class="monthly" id="monthly"></table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Global markets</h2>
+      <span class="panel-sub">Major indices · click a row to select</span>
+    </div>
+    <div class="table-scroll">
+      <table id="markets">
+        <thead>
+          <tr>
+            <th class="txt">Index</th>
+            <th>YTD return</th>
+            <th>P/LTM EPS</th>
+            <th>Div yield</th>
+            <th>Mkt cap</th>
+            <th>Volume</th>
+            <th class="txt">Trend</th>
+            <th>Price</th>
+            <th>Daily</th>
+          </tr>
+        </thead>
+        <tbody id="markets-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot">
+    All figures on this page are generated sample data for a demo dashboard — they do not describe a real
+    fund, real holdings, or real market prices, and nothing here is investment advice.
+    Rotshild-Project · Quant Dashboard prototype.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- deterministic sample data ---------------- */
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(20260715);
+  let gaussSpare = null;
+  function gauss() {
+    if (gaussSpare !== null) { const s = gaussSpare; gaussSpare = null; return s; }
+    let u = 0, v = 0;
+    while (u === 0) u = rand();
+    while (v === 0) v = rand();
+    const m = Math.sqrt(-2 * Math.log(u));
+    gaussSpare = m * Math.sin(2 * Math.PI * v);
+    return m * Math.cos(2 * Math.PI * v);
+  }
+
+  // Trading days from 2024-01-02 through 2026-07-15 (weekends skipped).
+  const dates = [];
+  {
+    const d = new Date(Date.UTC(2024, 0, 2));
+    const end = Date.UTC(2026, 6, 15);
+    while (d.getTime() <= end) {
+      const dow = d.getUTCDay();
+      if (dow !== 0 && dow !== 6) dates.push(new Date(d.getTime()));
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+  }
+  const N = dates.length;
+
+  // Benchmark: drift + noise; portfolio: beta exposure + alpha + idio noise.
+  // Two stress windows raise vol and cut drift so drawdowns look like markets.
+  const benchRet = new Array(N);
+  const portRet = new Array(N);
+  for (let i = 0; i < N; i++) {
+    let mu = 0.00042, sig = 0.0072;
+    if ((i > 155 && i < 190) || (i > 430 && i < 458)) { mu = -0.0013; sig = 0.0125; }
+    const rb = mu + sig * gauss();
+    benchRet[i] = rb;
+    portRet[i] = 0.00021 + 0.88 * rb + 0.0046 * gauss();
+  }
+  const port = [100], bench = [100];
+  for (let i = 0; i < N; i++) {
+    port.push(port[i] * (1 + portRet[i]));
+    bench.push(bench[i] * (1 + benchRet[i]));
+  }
+  port.shift(); bench.shift(); // port[i] = close of dates[i]
+
+  /* ---------------- derived statistics ---------------- */
+
+  const last = port[N - 1], prev = port[N - 2];
+  const dayPct = last / prev - 1;
+  const NAV0 = 187400000;
+  const navUsd = NAV0 * last / 100;
+  const dayPnlUsd = NAV0 * (last - prev) / 100;
+
+  let ytdBaseIdx = 0;
+  for (let i = 0; i < N; i++) if (dates[i].getUTCFullYear() === 2026) { ytdBaseIdx = i - 1; break; }
+  const ytdPct = last / port[ytdBaseIdx] - 1;
+
+  const r1y = portRet.slice(-252);
+  const meanR = r1y.reduce((a, b) => a + b, 0) / r1y.length;
+  const sdR = Math.sqrt(r1y.reduce((a, b) => a + (b - meanR) * (b - meanR), 0) / (r1y.length - 1));
+  const sharpe = (meanR / sdR) * Math.sqrt(252);
+  const vol1y = sdR * Math.sqrt(252);
+
+  let peak = -Infinity, maxDD = 0;
+  for (let i = 0; i < N; i++) {
+    if (port[i] > peak) peak = port[i];
+    const dd = port[i] / peak - 1;
+    if (dd < maxDD) maxDD = dd;
+  }
+
+  /* ---------------- formatting helpers ---------------- */
+
+  const fmtPct = (x, dp) => (x >= 0 ? "+" : "−") + (Math.abs(x) * 100).toFixed(dp === undefined ? 2 : dp) + "%";
+  const fmtMoney = (x) => {
+    const s = x < 0 ? "−" : "";
+    const a = Math.abs(x);
+    if (a >= 1e9) return s + "$" + (a / 1e9).toFixed(2) + "B";
+    if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(1) + "M";
+    if (a >= 1e3) return s + "$" + (a / 1e3).toFixed(0) + "K";
+    return s + "$" + a.toFixed(0);
+  };
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const fmtDate = (d) => d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + String(d.getUTCFullYear()).slice(2);
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
+  const lastDate = dates[N - 1];
+  document.getElementById("asof-date").textContent =
+    "AS OF " + fmtDate(lastDate).toUpperCase() + " · 20:00 UTC";
+
+  /* ---------------- stat tiles ---------------- */
+
+  const tiles = [
+    { label: "Net asset value", value: fmtMoney(navUsd), delta: fmtPct(dayPct) + " today", sign: dayPct },
+    { label: "Day P&L", value: fmtMoney(dayPnlUsd), delta: "vs prior close", sign: dayPnlUsd },
+    { label: "YTD return", value: fmtPct(ytdPct, 1), delta: "net of fees", sign: ytdPct },
+    { label: "Sharpe (1Y)", value: sharpe.toFixed(2), delta: "annualized", sign: 0 },
+    { label: "Volatility (1Y)", value: (vol1y * 100).toFixed(1) + "%", delta: "realized, ann.", sign: 0 },
+    { label: "Max drawdown", value: fmtPct(maxDD, 1), delta: "since inception", sign: -1 }
+  ];
+  {
+    const box = document.getElementById("tiles");
+    for (const t of tiles) {
+      const tile = el("div", "tile");
+      tile.appendChild(el("div", "label", t.label));
+      const v = el("div", "value", t.value);
+      if (t.sign > 0) v.classList.add("pos");
+      if (t.sign < 0) v.classList.add("neg");
+      tile.appendChild(v);
+      tile.appendChild(el("div", "delta", t.delta));
+      box.appendChild(tile);
+    }
+  }
+
+  /* ---------------- chart engine (SVG) ---------------- */
+
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs) {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function niceStep(raw) {
+    const p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const m = raw / p;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+  }
+
+  function buildChart(cfg) {
+    // cfg: {svg, hit, tt, height, series:[{name,color,vals}], dds (dates slice),
+    //       fmtVal, areaSeries (idx or -1), yZeroTop}
+    const svg = cfg.svg, hit = cfg.hit, tt = cfg.tt;
+    const W = svg.clientWidth || svg.parentNode.clientWidth || 900;
+    const H = cfg.height;
+    const padL = 46, padR = 52, padT = 10, padB = 24;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("height", H);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const n = cfg.dds.length;
+    let lo = Infinity, hi = -Infinity;
+    for (const s of cfg.series) for (const v of s.vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (cfg.includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+    const span = (hi - lo) || 1;
+    lo -= span * 0.06; hi += span * 0.06;
+    if (cfg.hardHi !== undefined) hi = Math.min(hi, cfg.hardHi);
+    const step = niceStep((hi - lo) / 4);
+    const y0 = Math.floor(lo / step) * step;
+    const y1 = Math.ceil(hi / step) * step;
+    const X = (i) => padL + (n === 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
+    const Y = (v) => padT + (1 - (v - y0) / (y1 - y0)) * (H - padT - padB);
+
+    // gridlines + y ticks
+    for (let v = y0; v <= y1 + step / 2; v += step) {
+      svg.appendChild(sv("line", { x1: padL, x2: W - padR, y1: Y(v), y2: Y(v), stroke: "var(--grid)", "stroke-width": 1 }));
+      const t = sv("text", { x: padL - 8, y: Y(v) + 3.5, "text-anchor": "end", fill: "var(--ink-3)", "font-size": 10, "font-family": "var(--mono)" });
+      t.textContent = cfg.fmtTick(v);
+      svg.appendChild(t);
+    }
+    // baseline
+    svg.appendChild(sv("line", { x1: padL, x2: W - padR, y1: Y(y0), y2: Y(y0), stroke: "var(--baseline)", "stroke-width": 1 }));
+
+    // x ticks: ~5 evenly spaced
+    const nx = Math.min(5, n);
+    for (let k = 0; k < nx; k++) {
+      const i = Math.round((k / (nx - 1 || 1)) * (n - 1));
+      const t = sv("text", { x: X(i), y: H - 7, "text-anchor": k === 0 ? "start" : (k === nx - 1 ? "end" : "middle"), fill: "var(--ink-3)", "font-size": 10, "font-family": "var(--mono)" });
+      t.textContent = fmtDate(cfg.dds[i]);
+      svg.appendChild(t);
+    }
+
+    // series paths
+    cfg.series.forEach((s, si) => {
+      let d = "";
+      for (let i = 0; i < n; i++) d += (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(s.vals[i]).toFixed(1);
+      if (si === cfg.areaSeries) {
+        const zero = cfg.includeZero ? Y(0) : Y(y0);
+        const a = d + "L" + X(n - 1).toFixed(1) + " " + zero + "L" + X(0).toFixed(1) + " " + zero + "Z";
+        svg.appendChild(sv("path", { d: a, fill: s.color, opacity: 0.10 }));
+      }
+      svg.appendChild(sv("path", { d: d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      // end marker: surface ring + dot
+      svg.appendChild(sv("circle", { cx: X(n - 1), cy: Y(s.vals[n - 1]), r: 6, fill: "var(--panel)" }));
+      svg.appendChild(sv("circle", { cx: X(n - 1), cy: Y(s.vals[n - 1]), r: 4, fill: s.color }));
+    });
+
+    // selective direct labels: endpoint value per series, ink text keyed by a dot
+    cfg.series.forEach((s, si) => {
+      const vy = Y(s.vals[n - 1]);
+      const ty = cfg.series.length === 2 && si === 1 && Math.abs(Y(cfg.series[0].vals[n - 1]) - vy) < 14
+        ? Y(cfg.series[0].vals[n - 1]) + 14 : vy + 4;
+      const t = sv("text", { x: X(n - 1) + 10, y: Math.max(padT + 8, Math.min(H - padB - 2, ty)), "text-anchor": "start", fill: "var(--ink-2)", "font-size": 10, "font-weight": 700, "font-family": "var(--mono)" });
+      t.textContent = cfg.fmtVal(s.vals[n - 1]);
+      svg.appendChild(t);
+    });
+
+    // crosshair
+    const cross = sv("line", { x1: 0, x2: 0, y1: padT, y2: H - padB, stroke: "var(--hairline-strong)", "stroke-width": 1, visibility: "hidden" });
+    svg.appendChild(cross);
+    const hoverDots = cfg.series.map((s) => {
+      const c = sv("circle", { r: 4, fill: s.color, stroke: "var(--panel)", "stroke-width": 2, visibility: "hidden" });
+      svg.appendChild(c);
+      return c;
+    });
+
+    function showIdx(i) {
+      i = Math.max(0, Math.min(n - 1, i));
+      const x = X(i);
+      cross.setAttribute("x1", x); cross.setAttribute("x2", x);
+      cross.setAttribute("visibility", "visible");
+      tt.replaceChildren();
+      tt.appendChild(el("div", "tt-date", fmtDate(cfg.dds[i]).toUpperCase()));
+      cfg.series.forEach((s, si) => {
+        hoverDots[si].setAttribute("cx", x);
+        hoverDots[si].setAttribute("cy", Y(s.vals[i]));
+        hoverDots[si].setAttribute("visibility", "visible");
+        const row = el("div", "tt-row");
+        const left = el("div", "tt-left");
+        const key = el("span", "tt-key");
+        key.style.borderColor = s.color;
+        left.appendChild(key);
+        left.appendChild(el("span", "tt-name", s.name));
+        row.appendChild(left);
+        row.appendChild(el("span", "tt-val", cfg.fmtVal(s.vals[i])));
+        tt.appendChild(row);
+      });
+      tt.style.display = "block";
+      const boxW = hit.clientWidth;
+      const ttW = tt.offsetWidth;
+      const px = x + 14 + ttW > boxW ? x - ttW - 14 : x + 14;
+      tt.style.left = px + "px";
+      tt.style.top = (padT + 6) + "px";
+      return i;
+    }
+    function hide() {
+      cross.setAttribute("visibility", "hidden");
+      hoverDots.forEach((c) => c.setAttribute("visibility", "hidden"));
+      tt.style.display = "none";
+    }
+
+    let kbIdx = n - 1;
+    hit.onpointermove = (e) => {
+      const r = hit.getBoundingClientRect();
+      const fx = (e.clientX - r.left) / r.width * W;
+      kbIdx = showIdx(Math.round((fx - padL) / ((W - padL - padR) / (n - 1 || 1))));
+    };
+    hit.onpointerleave = hide;
+    hit.onkeydown = (e) => {
+      if (e.key === "ArrowLeft") { kbIdx = showIdx(kbIdx - 1); e.preventDefault(); }
+      else if (e.key === "ArrowRight") { kbIdx = showIdx(kbIdx + 1); e.preventDefault(); }
+      else if (e.key === "Escape") hide();
+    };
+    hit.onblur = hide;
+  }
+
+  /* ---------------- range state + chart renders ---------------- */
+
+  let rangeDays = 252;
+
+  function renderCharts() {
+    const start = rangeDays === 0 ? 0 : Math.max(0, N - rangeDays);
+    const dds = dates.slice(start);
+    const p = port.slice(start);
+    const b = bench.slice(start);
+    const pb = p[0], bb = b[0];
+    const pIdx = p.map((v) => v / pb * 100);
+    const bIdx = b.map((v) => v / bb * 100);
+
+    buildChart({
+      svg: document.getElementById("eq-svg"),
+      hit: document.getElementById("eq-hit"),
+      tt: document.getElementById("eq-tt"),
+      height: 300,
+      dds: dds,
+      series: [
+        { name: "Portfolio", color: "#c07f14", vals: pIdx },
+        { name: "Benchmark", color: "#2792b8", vals: bIdx }
+      ],
+      areaSeries: 0,
+      includeZero: false,
+      fmtVal: (v) => v.toFixed(1),
+      fmtTick: (v) => Math.round(v).toLocaleString("en-US")
+    });
+
+    let pk = -Infinity;
+    const ddSeries = p.map((v) => { if (v > pk) pk = v; return (v / pk - 1) * 100; });
+    buildChart({
+      svg: document.getElementById("dd-svg"),
+      hit: document.getElementById("dd-hit"),
+      tt: document.getElementById("dd-tt"),
+      height: 150,
+      dds: dds,
+      series: [{ name: "Drawdown", color: "#d0484a", vals: ddSeries }],
+      areaSeries: 0,
+      includeZero: true,
+      hardHi: 0,
+      fmtVal: (v) => v.toFixed(1) + "%",
+      fmtTick: (v) => v.toFixed(0) + "%"
+    });
+  }
+
+  document.getElementById("ranges").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-days]");
+    if (!btn) return;
+    for (const b of document.querySelectorAll("#ranges button")) b.setAttribute("aria-pressed", "false");
+    btn.setAttribute("aria-pressed", "true");
+    rangeDays = Number(btn.dataset.days);
+    renderCharts();
+  });
+
+  let resizeT = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(renderCharts, 120);
+  });
+
+  /* ---------------- holdings table ---------------- */
+
+  const holdings = [
+    { tkr: "NVDA", name: "NVIDIA Corp",        sector: "Info Tech",    w: 8.4, px: 1487.20, day: 1.84,  ytd: 22.6,  pnl: 3140000 },
+    { tkr: "MSFT", name: "Microsoft Corp",     sector: "Info Tech",    w: 7.1, px: 512.44,  day: 0.62,  ytd: 11.9,  pnl: 1620000 },
+    { tkr: "AVGO", name: "Broadcom Inc",       sector: "Info Tech",    w: 5.6, px: 2104.75, day: -0.94, ytd: 18.3,  pnl: 1890000 },
+    { tkr: "LLY",  name: "Eli Lilly & Co",     sector: "Health Care",  w: 5.2, px: 934.10,  day: 0.31,  ytd: 9.4,   pnl: 870000 },
+    { tkr: "JPM",  name: "JPMorgan Chase",     sector: "Financials",   w: 4.9, px: 289.63,  day: 0.18,  ytd: 7.8,   pnl: 640000 },
+    { tkr: "AAPL", name: "Apple Inc",          sector: "Info Tech",    w: 4.7, px: 254.31,  day: -0.42, ytd: 3.1,   pnl: 210000 },
+    { tkr: "META", name: "Meta Platforms",     sector: "Comm Svcs",    w: 4.3, px: 812.90,  day: 1.12,  ytd: 15.7,  pnl: 1150000 },
+    { tkr: "XOM",  name: "Exxon Mobil",        sector: "Energy",       w: 3.8, px: 121.47,  day: -1.36, ytd: -4.2,  pnl: -310000 },
+    { tkr: "COST", name: "Costco Wholesale",   sector: "Cons Staples", w: 3.5, px: 1093.55, day: 0.24,  ytd: 6.5,   pnl: 390000 },
+    { tkr: "UNH",  name: "UnitedHealth Group", sector: "Health Care",  w: 3.2, px: 486.02,  day: -0.71, ytd: -8.9,  pnl: -560000 },
+    { tkr: "GEV",  name: "GE Vernova",         sector: "Industrials",  w: 2.9, px: 573.18,  day: 2.05,  ytd: 27.4,  pnl: 1290000 },
+    { tkr: "CASH", name: "USD / T-bills",      sector: "Cash",         w: 6.1, px: NaN,     day: 0.02,  ytd: 2.3,   pnl: 260000 }
+  ];
+
+  const cols = [
+    { key: "tkr", label: "Ticker", txt: true },
+    { key: "name", label: "Name", txt: true },
+    { key: "sector", label: "Sector", txt: true },
+    { key: "w", label: "Weight", fmt: (r) => r.w.toFixed(1) + "%" },
+    { key: "px", label: "Price", fmt: (r) => isNaN(r.px) ? "—" : "$" + r.px.toFixed(2) },
+    { key: "day", label: "Day", fmt: (r) => fmtPct(r.day / 100), signed: "day" },
+    { key: "ytd", label: "YTD", fmt: (r) => fmtPct(r.ytd / 100, 1), signed: "ytd" },
+    { key: "pnl", label: "P&L YTD", fmt: (r) => fmtMoney(r.pnl), signed: "pnl" }
+  ];
+  let sortKey = "w", sortDir = -1;
+
+  function renderHead() {
+    const tr = document.getElementById("holdings-head");
+    tr.replaceChildren();
+    for (const c of cols) {
+      const th = el("th", c.txt ? "txt" : "");
+      const btn = el("button", "", "");
+      btn.appendChild(document.createTextNode(c.label + " "));
+      const ar = el("span", "arrow", sortKey === c.key ? (sortDir === 1 ? "▲" : "▼") : "▼");
+      btn.appendChild(ar);
+      if (sortKey === c.key) th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+      btn.addEventListener("click", () => {
+        if (sortKey === c.key) sortDir = -sortDir;
+        else { sortKey = c.key; sortDir = c.txt ? 1 : -1; }
+        renderHead(); renderBody();
+      });
+      th.appendChild(btn);
+      tr.appendChild(th);
+    }
+  }
+  function renderBody() {
+    const tb = document.getElementById("holdings-body");
+    tb.replaceChildren();
+    const rows = holdings.slice().sort((a, b) => {
+      const va = a[sortKey], vb = b[sortKey];
+      const cmp = typeof va === "string" ? va.localeCompare(vb)
+        : (isNaN(va) ? -Infinity : va) - (isNaN(vb) ? -Infinity : vb);
+      return cmp * sortDir;
+    });
+    for (const r of rows) {
+      const tr = el("tr");
+      for (const c of cols) {
+        const td = el("td", c.txt ? "txt" : "");
+        if (c.key === "tkr") { td.appendChild(el("span", "tkr", r.tkr)); }
+        else if (c.txt) { td.textContent = r[c.key]; td.classList.add("dim"); }
+        else {
+          td.textContent = c.fmt(r);
+          if (c.signed) td.classList.add(r[c.signed] >= 0 ? "pos" : "neg");
+        }
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
+  renderHead(); renderBody();
+
+  /* ---------------- sector allocation ---------------- */
+
+  {
+    const bySector = new Map();
+    for (const h of holdings) bySector.set(h.sector, (bySector.get(h.sector) || 0) + h.w);
+    // remainder of the book beyond the top positions shown
+    const shown = holdings.reduce((a, h) => a + h.w, 0);
+    bySector.set("Other", Math.round((100 - shown) * 10) / 10);
+    const rows = [...bySector.entries()].sort((a, b) => b[1] - a[1]);
+    const max = rows[0][1];
+    const box = document.getElementById("sectors");
+    for (const [name, w] of rows) {
+      const row = el("div", "sector-row");
+      row.appendChild(el("span", "sname", name));
+      const track = el("div", "track");
+      const bar = el("div", "bar");
+      bar.style.width = (w / max * 100).toFixed(1) + "%";
+      track.appendChild(bar);
+      row.appendChild(track);
+      row.appendChild(el("span", "sval", w.toFixed(1) + "%"));
+      box.appendChild(row);
+    }
+  }
+
+  /* ---------------- global markets table ---------------- */
+
+  {
+    const indices = [
+      { id: "1", name: "Dow Jones USA",    country: "USA",    cc: "US", ytd: 0.40,  eps: 18.74, div: 2.00, cap: 28.04, vol: 1.7,   spark: [330.5, 331.2, 330.8, 331.5, 332.1, 331.8, 332.4, 333.2, 333.9, 333.7], price: 333.90, dchg: -0.20, dpct: -0.06 },
+      { id: "2", name: "S&P 500 USA",      country: "USA",    cc: "US", ytd: 11.72, eps: 7.42,  div: 1.44, cap: 399.6, vol: 24.6,  spark: [425.1, 426.3, 427.8, 428.1, 429.2, 428.9, 429.5, 429.1, 428.7, 428.9], price: 428.72, dchg: -0.82, dpct: -0.19 },
+      { id: "3", name: "Nasdaq USA",       country: "USA",    cc: "US", ytd: 36.59, eps: null,  div: 0.54, cap: 199.9, vol: 18.9,  spark: [360.2, 361.8, 362.4, 363.1, 364.3, 363.8, 364.1, 363.5, 363.2, 362.97], price: 362.97, dchg: -1.73, dpct: -0.47 },
+      { id: "4", name: "TSX Canada",       country: "Canada", cc: "CA", ytd: -0.78, eps: 6.06,  div: 2.56, cap: 3.67,  vol: 771.5, spark: [32.1, 32.3, 32.5, 32.4, 32.7, 32.8, 32.9, 33.0, 32.9, 32.96], price: 32.96, dchg: 0.19, dpct: 0.58 },
+      { id: "5", name: "Grupo BMV Mexico", country: "Mexico", cc: "MX", ytd: 4.15,  eps: 8.19,  div: 2.34, cap: 1.22,  vol: 1.1,   spark: [52.1, 52.8, 53.2, 53.5, 53.9, 54.1, 54.3, 54.0, 53.8, 53.7], price: 53.70, dchg: -1.01, dpct: -1.85 },
+      { id: "6", name: "Ibovespa Brazil",  country: "Brazil", cc: "BR", ytd: 11.19, eps: 6.23,  div: 9.46, cap: 4.87,  vol: 6.8,   spark: [28.5, 28.8, 29.1, 29.3, 29.5, 29.4, 29.6, 29.5, 29.3, 29.28], price: 29.28, dchg: -0.06, dpct: -0.22 }
+    ];
+    let selectedId = "1";
+
+    const fmtLarge = (v, unit) => v >= 1000 ? (v / 1000).toFixed(1) + unit : v.toFixed(1) + unit;
+    const chip = (v, dp) => {
+      const c = el("span", "chip " + (v >= 0 ? "pos" : "neg"), fmtPct(v / 100, dp === undefined ? 2 : dp));
+      return c;
+    };
+    function sparkSvg(data) {
+      const w = 64, h = 20;
+      const min = Math.min.apply(null, data), max = Math.max.apply(null, data);
+      const range = (max - min) || 1;
+      const pts = data.map((v, i) =>
+        ((i / (data.length - 1)) * (w - 6) + 1).toFixed(1) + "," +
+        (h - 3 - ((v - min) / range) * (h - 6)).toFixed(1));
+      const svg = sv("svg", { width: w, height: h, viewBox: "0 0 " + w + " " + h, role: "img", "aria-hidden": "true" });
+      svg.appendChild(sv("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      const lastPt = pts[pts.length - 1].split(",");
+      const upDay = data[data.length - 1] >= data[0];
+      svg.appendChild(sv("circle", { cx: lastPt[0], cy: lastPt[1], r: 2.5, fill: upDay ? "var(--up)" : "var(--down)" }));
+      return svg;
+    }
+
+    function renderMarkets() {
+      const tb = document.getElementById("markets-body");
+      tb.replaceChildren();
+      for (const ix of indices) {
+        const tr = el("tr");
+        tr.setAttribute("aria-selected", ix.id === selectedId ? "true" : "false");
+        tr.tabIndex = 0;
+
+        const tdName = el("td", "txt");
+        tdName.appendChild(el("span", "cc", ix.cc));
+        const nameWrap = el("span");
+        nameWrap.appendChild(el("span", "iname", ix.name));
+        nameWrap.appendChild(document.createTextNode(" "));
+        nameWrap.appendChild(el("span", "icountry", ix.country));
+        tdName.appendChild(nameWrap);
+        tr.appendChild(tdName);
+
+        const tdYtd = el("td"); tdYtd.appendChild(chip(ix.ytd)); tr.appendChild(tdYtd);
+        tr.appendChild(el("td", "dim", ix.eps === null ? "—" : ix.eps.toFixed(2)));
+        tr.appendChild(el("td", "dim", ix.div.toFixed(2) + "%"));
+        tr.appendChild(el("td", "dim", fmtLarge(ix.cap, "B")));
+        tr.appendChild(el("td", "dim", ix.vol >= 1 ? fmtLarge(ix.vol, "M") : (ix.vol * 1000).toFixed(1) + "K"));
+        const tdSpark = el("td", "txt"); tdSpark.appendChild(sparkSvg(ix.spark)); tr.appendChild(tdSpark);
+        tr.appendChild(el("td", "", "$" + ix.price.toFixed(2)));
+        const tdDay = el("td");
+        const dchg = el("span", ix.dchg >= 0 ? "pos" : "neg", (ix.dchg >= 0 ? "+" : "−") + Math.abs(ix.dchg).toFixed(2) + " ");
+        tdDay.appendChild(dchg);
+        tdDay.appendChild(chip(ix.dpct));
+        tr.appendChild(tdDay);
+
+        const select = () => { selectedId = ix.id; renderMarkets(); };
+        tr.addEventListener("click", select);
+        tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { select(); e.preventDefault(); } });
+        tb.appendChild(tr);
+      }
+    }
+    renderMarkets();
+  }
+
+  /* ---------------- monthly returns grid ---------------- */
+
+  {
+    const monthly = new Map(); // "yyyy-m" -> {first, last}
+    for (let i = 0; i < N; i++) {
+      const k = dates[i].getUTCFullYear() + "-" + dates[i].getUTCMonth();
+      if (!monthly.has(k)) monthly.set(k, { open: i === 0 ? 100 : port[i - 1], close: port[i] });
+      else monthly.get(k).close = port[i];
+    }
+    const years = [2024, 2025, 2026];
+    const table = document.getElementById("monthly");
+    const thead = el("thead");
+    const hr = el("tr");
+    hr.appendChild(el("th", "txt", "Year"));
+    for (const m of MONTHS) hr.appendChild(el("th", "", m));
+    hr.appendChild(el("th", "", "YTD"));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const y of years) {
+      const tr = el("tr");
+      const th = el("th");
+      th.textContent = y;
+      tr.appendChild(th);
+      let ytd = 1, any = false;
+      for (let m = 0; m < 12; m++) {
+        const cell = monthly.get(y + "-" + m);
+        const td = el("td");
+        if (!cell) { td.textContent = "·"; td.className = "blank"; }
+        else {
+          const r = cell.close / cell.open - 1;
+          ytd *= 1 + r; any = true;
+          td.textContent = fmtPct(r, 1);
+          const a = Math.min(0.30, Math.abs(r) * 5);
+          td.style.backgroundColor = r >= 0
+            ? "rgba(47, 180, 90, " + a.toFixed(2) + ")"
+            : "rgba(224, 82, 77, " + a.toFixed(2) + ")";
+        }
+        tr.appendChild(td);
+      }
+      const tdY = el("td", "ytd");
+      tdY.textContent = any ? fmtPct(ytd - 1, 1) : "·";
+      tdY.classList.add(ytd - 1 >= 0 ? "pos" : "neg");
+      tr.appendChild(tdY);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+  }
+
+  renderCharts();
+})();
+</script>
