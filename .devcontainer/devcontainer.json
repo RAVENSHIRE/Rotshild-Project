@@ -1,0 +1,29 @@
+{
+  "name": "Rotshild Quant Dashboard",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g firecrawl-cli",
+  "forwardPorts": [8501],
+  "portsAttributes": {
+    "8501": { "label": "Streamlit Dashboard", "onAutoForward": "openPreview" }
+  },
+  "secrets": {
+    "FIRECRAWL_API_KEY": {
+      "description": "Firecrawl API key (fc-...) used for web data / news scraping"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  }
+}

@@ -5,5 +5,13 @@
 # Firecrawl local cache
 .firecrawl/
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local data cache
+data/
+
 # Node
 node_modules/

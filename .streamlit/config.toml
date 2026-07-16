@@ -1,0 +1,8 @@
+# Institutional private-banking theme: deep navy, charcoal, white, gold accents
+[theme]
+base = "light"
+primaryColor = "#1B2A4A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6FA"
+textColor = "#22262B"
+font = "sans serif"
