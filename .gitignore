@@ -1,0 +1,9 @@
+# Environment / secrets
+.env
+.env.local
+
+# Firecrawl local cache
+.firecrawl/
+
+# Node
+node_modules/
