@@ -1,63 +1,93 @@
-# Rotshild Quant Dashboard
+# Rotshild Portfolio Dashboard
 
-A Swiss private-banking style **portfolio analytics dashboard** for quantitative
-portfolio managers, built with [Streamlit](https://streamlit.io). It computes
-real quant metrics from market data and presents them in an institutional
-navy/gold interface.
+A four-page, institutional-grade **bottom-up portfolio management dashboard**:
+security-level fundamentals and risk analytics roll up into a dual-mandate book
+of **Return Assets** (growth) and **Diversifying Assets** (protection) — see
+[`docs/investment-approach.md`](docs/investment-approach.md).
 
-![sections](https://img.shields.io/badge/sections-4-0B1F3A) ![lang](https://img.shields.io/badge/i18n-EN%20%2F%20DE-C5A25A)
+Zero-framework frontend (vanilla ES modules + Chart.js, self-hosted) on a
+layered, dependency-light Python backend (stdlib HTTP server + pandas/numpy).
+Firebase provides authentication and Firestore persistence, with a built-in
+**demo mode** so everything works before any Firebase project exists.
 
-## Features
+## Pages
 
-The app is organised into four sections (left-hand navigation):
+| Route | Page | What it does |
+| --- | --- | --- |
+| `/` | **Dashboard** | Hero KPIs (value, β, α, Sharpe), portfolio controls, the **security-level book** with per-holding fundamentals dossier, contribution-by-security and rolling-CAPM charts, portfolio-vs-benchmark roll-up. |
+| `/allocation` | **Allocation** | Asset-by-asset target-weight editor with drift bars → **proposed trades** (buys/sells net to zero) → live roll-up donuts by asset class and by dual mandate. Targets can be applied to the dashboard and saved to the cloud. |
+| `/news` | **News** | Curated institutional feed ordered bottom-up: stories touching held securities first; filters for holdings / company / rates & credit / macro. |
+| `/login` | **Login** | Firebase email/password sign-in & sign-up (or simulated demo auth); on sign-in the user's saved portfolio state is pulled from Firestore. |
 
-| Section | What it does |
-| --- | --- |
-| **Market Overview** | KPI cards for **CAGR**, **Max Drawdown**, **Sharpe** and **Sortino**, each compared against the benchmark, plus a rebased cumulative-performance chart. |
-| **Quant Risk & CAPM** | **Rolling 63-day Beta** and **Annualized Alpha** from a rolling CAPM regression of any instrument (or the portfolio) onto the benchmark. |
-| **Rebalancing Engine** | Asset-allocation **donut** by class, an editable **current vs target** weights table, and a one-click **optimal-trade** calculation. |
-| **Avaloq/VBA Export** | Exports the proposed trades as **CSV** (Avaloq-style) and as a ready-to-paste **VBA array** for Excel macros. |
+## Architecture
 
-Other niceties:
+```
+frontend/                     ← served by app.py
+  index.html · allocation.html · news.html · login.html
+  static/styles.css           ← design tokens (light + dark), layout
+  static/vendor/chart.umd.min.js  ← self-hosted Chart.js (no CDN dependency)
+  static/js/
+    firebase-config.js        ← paste your Firebase web config here
+    firebase.js               ← auth + Firestore layer (demo-mode fallback)
+    api.js                    ← state model, backend fetches, formatting
+    charts.js                 ← Chart.js theme (CVD-validated palette), builders
+    shell.js                  ← nav, auth button, EN/DE i18n
+    dashboard.js · allocation.js · news.js · login.js
 
-- **Bilingual** interface — English / German toggle in the sidebar.
-- Configurable **tickers**, **benchmark**, **risk-free rate**, and **look-back**.
-- **Live data** via Yahoo Finance when the network allows, with an automatic,
-  clearly-labelled fallback to **reproducible synthetic data** that preserves a
-  realistic CAPM structure, so the dashboard works fully offline.
+app.py      ← HTTP routing: pages + JSON API (+ optional firebase-admin endpoints)
+data.py     ← market data (Yahoo live / synthetic fallback), fundamentals, news, mandates
+quant.py    ← pure analytics: CAGR, drawdown, Sharpe/Sortino, CAPM, contributions, rebalancing
+i18n.py     ← EN/DE string table (served at /api/i18n)
+test_quant.py  ← analytics sanity tests
+```
+
+### API
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/dashboard` | GET | Full payload: metrics, charts, holdings with fundamentals. Params: `tickers, benchmark, lookback, risk_free, portfolio_value, live, weights` (`AAPL:40,MSFT:60`). |
+| `/api/rebalance` | POST | `{current, target, portfolio_value}` → trade blotter (weights renormalised, trades net to zero). |
+| `/api/news` | GET | Feed with `related` flags for held tickers. |
+| `/api/i18n` | GET | EN/DE translation table. |
+| `/api/portfolio` | GET/POST | Server-side Firestore read/write, verified via Firebase ID token (requires `firebase-admin`; otherwise 501 and the client SDK is used). |
+| `/api/health` | GET | Liveness + firebase-admin status. |
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt
-streamlit run app.py
+python app.py            # serves http://127.0.0.1:8000/ and opens the browser
+python test_quant.py     # run the analytics tests
 ```
 
-Then open the URL Streamlit prints (default <http://localhost:8501>).
+Live prices come from Yahoo Finance; without network the app transparently
+switches to reproducible synthetic data with a realistic CAPM structure (the
+status pill always states the active source).
 
-## Project layout
+## Firebase setup (optional — demo mode works without it)
 
-| File | Purpose |
-| --- | --- |
-| `app.py` | Streamlit UI, theming, and section rendering. |
-| `quant.py` | Pure analytics — CAGR, drawdown, Sharpe/Sortino, rolling CAPM, rebalancing. No I/O. |
-| `data.py` | Market-data layer: live Yahoo Finance fetch with synthetic fallback. |
-| `i18n.py` | EN/DE string table. |
-| `test_quant.py` | Sanity tests for the analytics (`python test_quant.py`). |
+1. Create a project at <https://console.firebase.google.com> → add a **Web app**.
+2. Enable **Authentication → Sign-in method → Email/Password**.
+3. Create a **Cloud Firestore** database, and restrict access to each user's own
+   document:
+   ```
+   match /users/{uid} { allow read, write: if request.auth.uid == uid; }
+   ```
+4. Paste the web config into `frontend/static/js/firebase-config.js`.
+5. *(Optional, server-side)* `pip install firebase-admin`, download a
+   service-account key, and export
+   `GOOGLE_APPLICATION_CREDENTIALS=/path/to/serviceAccount.json` before
+   `python app.py` — this activates token-verified `/api/portfolio`.
+
+Until step 4 the login page runs in clearly-labelled **demo mode**
+(localStorage-simulated auth and cloud), so the full sign-in → persist →
+reload flow is demonstrable offline.
 
 ## Methodology notes
 
-- **Annualisation** uses 252 trading days.
-- **Sharpe / Sortino** are computed on daily excess returns over the (daily-ised)
-  risk-free rate and annualised by √252; Sortino uses downside deviation only.
-- **Rolling CAPM** estimates β as `cov(asset, bench) / var(bench)` over a 63-day
-  window and reports the regression intercept (α) annualised.
-- **Rebalancing** trades are `(target − current) weight × portfolio value`, so
-  proposed buys and sells net to zero.
-
-## Data availability
-
-Yahoo Finance is reached through `yfinance`. In restricted network
-environments the request is blocked, and the app transparently switches to
-synthetic data — a banner and the "Data source" caption always tell you which
-mode you are in.
+- Annualisation uses 252 trading days; Sharpe/Sortino on daily excess returns.
+- Rolling CAPM: β = cov/var over 63 days, α is the annualised intercept.
+- Contribution ≈ weight × cumulative security return (buy-and-hold attribution).
+- Rebalancing trades are `(target − current) × portfolio value`; net zero.
+- Chart palette (light `#24558F/#B3862F/#BE5488/#12855F`, dark equivalents) is
+  validated for colour-vision-deficiency separation and surface contrast.
