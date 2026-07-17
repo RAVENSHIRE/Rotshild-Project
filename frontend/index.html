@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Institutional Portfolio Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <!-- Chart.js vendored locally so the dashboard works without CDN access -->
+    <script src="vendor/chart.umd.js"></script>
+    <script type="module" src="firebase-config.js"></script>
+</head>
+<body>
+
+<div class="dashboard">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logo">PC</div>
+            <div class="brand-text">
+                <h2>PHANTOM</h2>
+                <p>Institutional Terminal</p>
+            </div>
+        </div>
+        <nav class="menu">
+            <div class="menu-item active" role="link" tabindex="0" onclick="window.location.href='index.html'">Dashboard</div>
+            <div class="menu-item" role="link" tabindex="0" onclick="window.location.href='allocation.html'">Asset Allocation</div>
+            <div class="menu-item" role="link" tabindex="0" onclick="window.location.href='news.html'">Market Intel</div>
+            <div class="menu-item" role="button" tabindex="0" id="logout-btn">Log Out</div>
+        </nav>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+        <div class="topbar">
+            <div class="heading">
+                <h1>Portfolio Analytics</h1>
+                <p>Bottom-up equity strategy &amp; risk-adjusted metrics</p>
+            </div>
+            <div class="account">
+                <div class="pill" id="benchmark-label">BENCHMARK: SPY</div>
+                <div class="pill">SIMULATED DATA</div>
+            </div>
+        </div>
+
+        <section class="hero-grid">
+            <!-- EQUITY CARD -->
+            <div class="card equity-card">
+                <div class="label">Total AUM (USD)</div>
+                <div class="big-equity" id="total-value">Loading…</div>
+                <div class="label">Total Return</div>
+                <div class="pnl" id="total-return">--</div>
+                <div class="stats">
+                    <div class="stat-box">
+                        <h3>CAGR</h3>
+                        <p id="metric-cagr">--</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Max Drawdown</h3>
+                        <p id="metric-dd" class="negative">--</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Sharpe Ratio</h3>
+                        <p id="metric-sharpe">--</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Portfolio Beta</h3>
+                        <p id="metric-beta">--</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Alpha (ann.)</h3>
+                        <p id="metric-alpha">--</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Sortino</h3>
+                        <p id="metric-sortino">--</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHART CARD -->
+            <div class="card chart-card">
+                <div class="chart-top">
+                    <div>
+                        <h2>Performance vs Benchmark</h2>
+                    </div>
+                </div>
+                <div style="height:320px; width: 100%;">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- BOTTOM-UP HOLDINGS TABLE -->
+        <section class="card table-card">
+            <div class="section-title">
+                <h2>Bottom-Up Holdings</h2>
+                <span class="hint">Held at fixed share count since window start — weights drift with performance</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset</th>
+                        <th>Class</th>
+                        <th>Price</th>
+                        <th>24h Change</th>
+                        <th>Current Value</th>
+                        <th>Current Weight</th>
+                        <th>Target Weight</th>
+                        <th>Drift</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="holdings-table-body">
+                </tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

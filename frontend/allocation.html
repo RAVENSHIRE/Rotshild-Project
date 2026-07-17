@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Asset Allocation — Institutional Portfolio Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="firebase-config.js"></script>
+</head>
+<body>
+
+<div class="dashboard">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logo">PC</div>
+            <div class="brand-text">
+                <h2>PHANTOM</h2>
+                <p>Institutional Terminal</p>
+            </div>
+        </div>
+        <nav class="menu">
+            <div class="menu-item" role="link" tabindex="0" onclick="window.location.href='index.html'">Dashboard</div>
+            <div class="menu-item active" role="link" tabindex="0" onclick="window.location.href='allocation.html'">Asset Allocation</div>
+            <div class="menu-item" role="link" tabindex="0" onclick="window.location.href='news.html'">Market Intel</div>
+            <div class="menu-item" role="button" tabindex="0" id="logout-btn">Log Out</div>
+        </nav>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div class="heading">
+                <h1>Asset Allocation</h1>
+                <p>Target vs current weights &amp; rebalancing trades</p>
+            </div>
+            <div class="account">
+                <div class="pill" id="benchmark-label">BENCHMARK: SPY</div>
+                <div class="pill">SIMULATED DATA</div>
+            </div>
+        </div>
+
+        <section class="card table-card">
+            <div class="section-title">
+                <h2>Rebalance to Target</h2>
+                <span class="hint">Positive trade = buy to reach target, negative = trim</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Asset</th>
+                        <th>Class</th>
+                        <th>Current Weight</th>
+                        <th>Target Weight</th>
+                        <th>Drift</th>
+                        <th>Current Value</th>
+                        <th>Rebalance Trade</th>
+                    </tr>
+                </thead>
+                <tbody id="alloc-table-body">
+                </tbody>
+            </table>
+        </section>
+    </main>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    try {
+        const res = await fetch("/api/dashboard?tickers=AAPL,MSFT,NVDA&benchmark=SPY&portfolio_value=1250000");
+        const data = await res.json();
+        document.getElementById("benchmark-label").textContent = "BENCHMARK: " + data.benchmark;
+        const tbody = document.getElementById("alloc-table-body");
+        const focus = decodeURIComponent(window.location.hash.slice(1));
+
+        const cell = (text, className) => {
+            const td = document.createElement("td");
+            td.textContent = text;
+            if (className) td.className = className;
+            return td;
+        };
+
+        for (const a of data.holdings) {
+            const tr = document.createElement("tr");
+            if (a.ticker === focus) tr.style.background = "rgba(91,140,255,0.08)";
+            tr.appendChild(cell(a.ticker, "strong"));
+            tr.appendChild(cell(a.asset_class));
+            tr.appendChild(cell(a.current_weight.toFixed(2) + "%"));
+            tr.appendChild(cell(a.target_weight.toFixed(2) + "%"));
+            tr.appendChild(cell((a.drift > 0 ? "+" : "") + a.drift.toFixed(2) + "%",
+                Math.abs(a.drift) > 2 ? "negative" : ""));
+            tr.appendChild(cell(usd.format(a.value)));
+            tr.appendChild(cell(
+                (a.rebalance_usd >= 0 ? "BUY " : "SELL ") + usd.format(Math.abs(a.rebalance_usd)),
+                a.rebalance_usd >= 0 ? "positive" : "negative"
+            ));
+            tbody.appendChild(tr);
+        }
+    } catch (e) {
+        console.error("Error fetching allocation data:", e);
+    }
+});
+</script>
+</body>
+</html>
