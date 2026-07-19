@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------
 // News page: /api/news feed, holdings-first ordering, filter chips.
 // ------------------------------------------------------------------
-import { fetchNews, loadState, timeAgo } from "./api.js";
+import { esc, fetchNews, loadState, timeAgo } from "./api.js";
 import { initShell } from "./shell.js";
 
 const state = loadState();
@@ -24,17 +24,17 @@ function render() {
       (item) => `
       <article class="news-card${item.related ? " related" : ""}">
         <div class="news-meta">
-          <span class="source">${item.source}</span>
+          <span class="source">${esc(item.source)}</span>
           <span>·</span>
-          <span>${timeAgo(item.hours_ago)}</span>
+          <span>${esc(timeAgo(item.hours_ago))}</span>
           <span>·</span>
-          <span>${item.category}</span>
+          <span>${esc(item.category)}</span>
           ${item.related ? '<span class="held-badge">Held position</span>' : ""}
         </div>
-        <h3>${item.headline}</h3>
-        <p>${item.summary}</p>
+        <h3>${esc(item.headline)}</h3>
+        <p>${esc(item.summary)}</p>
         <div class="news-tags">
-          ${item.tickers.map((t) => `<span class="tag">${t}</span>`).join("")}
+          ${item.tickers.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
         </div>
       </article>`
     )
@@ -59,5 +59,5 @@ fetchNews(state.tickers)
   })
   .catch((err) => {
     document.getElementById("news-grid").innerHTML =
-      `<article class="news-card"><p>Could not load the news feed: ${err.message}</p></article>`;
+      `<article class="news-card"><p>Could not load the news feed: ${esc(err.message)}</p></article>`;
   });

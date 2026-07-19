@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
+import pfm
 from data import asset_class, fundamentals, load_news, load_prices, mandate
 from i18n import TRANSLATIONS
 from quant import (
@@ -58,6 +59,7 @@ PAGE_ROUTES = {
     "/login": "login.html",
     "/news": "news.html",
     "/allocation": "allocation.html",
+    "/desk": "desk.html",
 }
 
 
@@ -121,7 +123,12 @@ def _parse_tickers(value: str | None) -> list[str]:
 
 
 def _parse_weights(value: str | None) -> dict[str, float] | None:
-    """Parse ``AAPL:30,MSFT:25`` (percent) into normalised fractions."""
+    """Parse ``AAPL:30,MSFT:25`` into normalised weight fractions.
+
+    Values are *relative* weights on any scale — percent (``30,25``) and
+    fractions (``0.3,0.25``) normalise to the identical allocation, since
+    each weight is divided by the total.
+    """
     if not value:
         return None
     weights: dict[str, float] = {}
@@ -345,6 +352,13 @@ class PortfolioHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/i18n":
             self._send_json({"translations": TRANSLATIONS})
             return
+        if parsed.path == "/api/pfm/desk":
+            self._guarded(lambda: self._send_json(pfm.desk_overview()))
+            return
+        if parsed.path == "/api/pfm/portfolio":
+            pid = (query.get("id", [""])[0] or "").strip().upper()
+            self._guarded(lambda: self._send_json(pfm.portfolio_detail(pid)))
+            return
         if parsed.path == "/api/health":
             self._send_json({"ok": True, "firebase_admin": FIREBASE_APP is not None})
             return
@@ -360,6 +374,15 @@ class PortfolioHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/rebalance":
             self._guarded(self._rebalance)
+            return
+        if parsed.path == "/api/pfm/rebalance":
+            self._guarded(
+                lambda: self._send_json(
+                    pfm.rebalance_portfolio(
+                        str(self._read_body().get("portfolio_id", "")).strip().upper()
+                    )
+                )
+            )
             return
         if parsed.path == "/api/portfolio":
             self._portfolio_post()

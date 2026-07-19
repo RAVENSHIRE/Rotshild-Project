@@ -5,7 +5,7 @@
 // ------------------------------------------------------------------
 import {
   fetchDashboard, postRebalance, loadState, saveState,
-  fmtMoney, fmtPct, fmtPctSigned, signClass,
+  esc, fmtMoney, fmtPct, fmtPctSigned, signClass,
 } from "./api.js";
 import { donutChart, divergingBar, classColor, mandateColor, onThemeChange } from "./charts.js";
 import { initShell } from "./shell.js";
@@ -23,32 +23,31 @@ function driftOf(h) {
 function renderEditor() {
   const body = $("allocation-editor-body");
   body.innerHTML = "";
-  const maxDrift = Math.max(5, ...holdings.map((h) => Math.abs(driftOf(h))));
   for (const h of holdings) {
     const tr = document.createElement("tr");
     const mandateCls = h.mandate === "Return Assets" ? "return" : "divers";
     tr.innerHTML = `
-      <td><span class="asset-name"><span class="ticker">${h.ticker}</span><span class="full">${h.fundamentals.name}</span></span></td>
-      <td>${h.asset_class}</td>
+      <td><span class="asset-name"><span class="ticker">${esc(h.ticker)}</span><span class="full">${esc(h.fundamentals.name)}</span></span></td>
+      <td>${esc(h.asset_class)}</td>
       <td><span class="tag ${mandateCls}">${h.mandate === "Return Assets" ? "Return" : "Diversifying"}</span></td>
       <td class="num">${fmtPct(h.weight)}</td>
       <td class="num"><input class="target-input" type="number" min="0" max="100" step="0.5"
-            value="${(targets[h.ticker] ?? h.weight).toFixed(1)}" data-ticker="${h.ticker}"></td>
+            value="${(targets[h.ticker] ?? h.weight).toFixed(1)}" data-ticker="${esc(h.ticker)}"></td>
       <td><span class="drift-cell">
-            <span class="drift-track"><span class="drift-fill" data-ticker="${h.ticker}"></span></span>
-            <small class="drift-label ${signClass(driftOf(h))}" data-ticker="${h.ticker}">${fmtPctSigned(driftOf(h))}</small>
+            <span class="drift-track"><span class="drift-fill" data-ticker="${esc(h.ticker)}"></span></span>
+            <small class="drift-label ${signClass(driftOf(h))}" data-ticker="${esc(h.ticker)}">${fmtPctSigned(driftOf(h))}</small>
           </span></td>`;
     body.appendChild(tr);
   }
   body.querySelectorAll(".target-input").forEach((input) =>
     input.addEventListener("input", () => {
       targets[input.dataset.ticker] = parseFloat(input.value) || 0;
-      refreshDrift(maxDrift);
+      refreshDrift();
       renderRollups();
       renderTotal();
     })
   );
-  refreshDrift(maxDrift);
+  refreshDrift();
   renderTotal();
 }
 
@@ -95,7 +94,7 @@ function legend(containerId, entries, colorFn) {
       .map(
         ([label, value]) => `
         <div class="allocation-item">
-          <span><i class="dot" style="background:${colorFn(label)}"></i>${label}</span>
+          <span><i class="dot" style="background:${esc(colorFn(label))}"></i>${esc(label)}</span>
           <strong>${fmtPct(value)}</strong>
         </div>`
       )
@@ -124,8 +123,8 @@ async function computeTrades() {
     const sideCls = t.side === "BUY" ? "positive" : t.side === "SELL" ? "negative" : "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><span class="asset-name"><span class="ticker">${t.instrument}</span><span class="full">${t.asset_class} · ${t.mandate}</span></span></td>
-      <td class="${sideCls}" style="font-weight:600;">${t.side}</td>
+      <td><span class="asset-name"><span class="ticker">${esc(t.instrument)}</span><span class="full">${esc(t.asset_class)} · ${esc(t.mandate)}</span></span></td>
+      <td class="${sideCls}" style="font-weight:600;">${esc(t.side)}</td>
       <td class="num">${fmtPct(t.current_weight)}</td>
       <td class="num">${fmtPct(t.target_weight)}</td>
       <td class="num ${signClass(t.drift)}">${fmtPctSigned(t.drift)}</td>

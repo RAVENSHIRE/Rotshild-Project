@@ -18,6 +18,7 @@ Firebase provides authentication and Firestore persistence, with a built-in
 | `/allocation` | **Allocation** | Asset-by-asset target-weight editor with drift bars → **proposed trades** (buys/sells net to zero) → live roll-up donuts by asset class and by dual mandate. Targets can be applied to the dashboard and saved to the cloud. |
 | `/news` | **News** | Curated institutional feed ordered bottom-up: stories touching held securities first; filters for holdings / company / rates & credit / macro. |
 | `/login` | **Login** | Firebase email/password sign-in & sign-up (or simulated demo auth); on sign-in the user's saved portfolio state is pulled from Firestore. |
+| `/desk` | **PFM Desk** | A conceptual clone of the **Avaloq Core Platform PFM** model: aggregated Business-Partner book (total AuM, discretionary share, open restriction flags), container drilldown with current-vs-target allocation, a **restriction engine** (asset-class ceilings, Retail suitability blocks, minimum-cash liquidity, single-position concentration → PASS/WARNING/BREACH), and a **model rebalancing engine** whose self-financing order proposals are pre-trade checked against every rule. |
 
 ## Architecture
 
@@ -37,8 +38,11 @@ frontend/                     ← served by app.py
 app.py      ← HTTP routing: pages + JSON API (+ optional firebase-admin endpoints)
 data.py     ← market data (Yahoo live / synthetic fallback), fundamentals, news, mandates
 quant.py    ← pure analytics: CAGR, drawdown, Sharpe/Sortino, CAPM, contributions, rebalancing
+pfm.py      ← Avaloq-style PFM layer: BP/Container/Position object model,
+              restriction engine, target models, compliance-checked rebalancing
 i18n.py     ← EN/DE string table (served at /api/i18n)
 test_quant.py  ← analytics sanity tests
+test_pfm.py    ← restriction/rebalancing engine tests
 ```
 
 ### API
@@ -50,6 +54,9 @@ test_quant.py  ← analytics sanity tests
 | `/api/news` | GET | Feed with `related` flags for held tickers. |
 | `/api/i18n` | GET | EN/DE translation table. |
 | `/api/portfolio` | GET/POST | Server-side Firestore read/write, verified via Firebase ID token (requires `firebase-admin`; otherwise 501 and the client SDK is used). |
+| `/api/pfm/desk` | GET | Aggregated PFM-desk view: every Business Partner with AuM, drift, and compliance status. |
+| `/api/pfm/portfolio` | GET | Container detail (`id=PF-2001`): positions, class weights vs target model, restriction report. |
+| `/api/pfm/rebalance` | POST | `{portfolio_id}` → self-financing model-rebalancing orders + post-trade restriction check. |
 | `/api/health` | GET | Liveness + firebase-admin status. |
 
 ## Quick start
@@ -57,7 +64,8 @@ test_quant.py  ← analytics sanity tests
 ```bash
 pip install -r requirements.txt
 python app.py            # serves http://127.0.0.1:8000/ and opens the browser
-python test_quant.py     # run the analytics tests
+python test_quant.py     # analytics tests
+python test_pfm.py       # restriction/rebalancing engine tests
 ```
 
 Live prices come from Yahoo Finance; without network the app transparently

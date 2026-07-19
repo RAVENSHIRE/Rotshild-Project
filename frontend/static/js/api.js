@@ -83,6 +83,12 @@ export const postRebalance = (current, target, portfolioValue) =>
   });
 
 // ---- Formatting --------------------------------------------------- //
+/** Escape a value for safe interpolation into innerHTML templates. */
+export const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+
 const money = new Intl.NumberFormat("en-CH", {
   style: "currency", currency: "CHF", maximumFractionDigits: 0,
 });

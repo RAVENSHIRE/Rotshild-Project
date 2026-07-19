@@ -4,7 +4,7 @@
 // ------------------------------------------------------------------
 import {
   fetchDashboard, loadState, saveState,
-  fmtMoney, fmtPrice, fmtMoneySigned, fmtPct, fmtPctSigned, fmtNum, signClass,
+  esc, fmtMoney, fmtPrice, fmtMoneySigned, fmtPct, fmtPctSigned, fmtNum, signClass,
 } from "./api.js";
 import {
   lineChart, sparkChart, divergingBar, palette, cssVar, onThemeChange,
@@ -86,7 +86,7 @@ function renderHoldings() {
     tr.className = "selectable" + (h.ticker === selected ? " selected" : "");
     const mandateCls = h.mandate === "Return Assets" ? "return" : "divers";
     tr.innerHTML = `
-      <td><span class="asset-name"><span class="ticker">${h.ticker}</span><span class="full">${h.fundamentals.name} · ${h.fundamentals.sector}</span></span></td>
+      <td><span class="asset-name"><span class="ticker">${esc(h.ticker)}</span><span class="full">${esc(h.fundamentals.name)} · ${esc(h.fundamentals.sector)}</span></span></td>
       <td><span class="tag ${mandateCls}">${h.mandate === "Return Assets" ? "Return" : "Diversifying"}</span></td>
       <td class="num ${signClass(h.total_return)}">${fmtPctSigned(h.total_return)}</td>
       <td class="num">${fmtNum(h.beta)}</td>
@@ -120,11 +120,11 @@ function renderDetail(h) {
   ];
   $("security-detail").innerHTML = `
     <h3>Security dossier</h3>
-    <div class="d-name">${f.name}</div>
-    <div class="d-sector">${h.ticker} · ${f.sector} · ${f.asset_class}</div>
-    <p class="d-thesis">${f.thesis}</p>
+    <div class="d-name">${esc(f.name)}</div>
+    <div class="d-sector">${esc(h.ticker)} · ${esc(f.sector)} · ${esc(f.asset_class)}</div>
+    <p class="d-thesis">${esc(f.thesis)}</p>
     <div class="metric-rows">
-      ${rows.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join("")}
+      ${rows.map(([k, v]) => `<div><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join("")}
     </div>`;
 }
 

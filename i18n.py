@@ -76,6 +76,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "nav_dashboard": {"EN": "Dashboard", "DE": "Dashboard"},
     "nav_allocation": {"EN": "Allocation", "DE": "Allokation"},
     "nav_news": {"EN": "News", "DE": "Nachrichten"},
+    "nav_desk": {"EN": "PFM Desk", "DE": "PFM-Desk"},
+    "pfm_desk_title": {"EN": "PFM Desk", "DE": "PFM-Desk"},
     "sign_in": {"EN": "Sign in", "DE": "Anmelden"},
     "sign_out": {"EN": "Sign out", "DE": "Abmelden"},
     "holdings": {"EN": "Security-Level Book", "DE": "Positionen auf Einzeltitelebene"},

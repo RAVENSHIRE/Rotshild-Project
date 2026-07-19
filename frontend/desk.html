@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PFM Desk — aggregated Business Partner book with restriction engine and model rebalancing, mirroring the Avaloq PFM object model.">
+    <title>Rotshild | PFM Desk</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2214%22 fill=%22%2314203a%22/><text x=%2250%22 y=%2268%22 font-size=%2254%22 text-anchor=%22middle%22 fill=%22%23c9a558%22 font-family=%22Georgia%22>R</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <nav class="site-nav" id="site-nav">
+                <a href="/" data-route="/" data-i18n="nav_dashboard">Dashboard</a>
+                <a href="/allocation" data-route="/allocation" data-i18n="nav_allocation">Allocation</a>
+                <a href="/desk" data-route="/desk" data-i18n="nav_desk">PFM Desk</a>
+                <a href="/news" data-route="/news" data-i18n="nav_news">News</a>
+                <div class="lang-toggle" role="group" aria-label="Language">
+                    <button type="button" data-lang="EN" class="active">EN</button>
+                    <button type="button" data-lang="DE">DE</button>
+                </div>
+                <button class="ghost-link" id="login-btn" type="button" data-i18n="sign_in">Sign in</button>
+            </nav>
+            <button class="menu-btn" id="menu-btn" type="button" aria-label="Toggle navigation">☰</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="section container">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Portfolio Manager · Aggregated View</p>
+                    <h2 data-i18n="pfm_desk_title">PFM Desk</h2>
+                </div>
+                <div class="mini-note">A conceptual clone of the Avaloq PFM object model: Business Partners → Containers → Positions, with a restriction engine and model rebalancing.</div>
+            </div>
+            <div class="stats-grid">
+                <article class="stat-card"><span>Assets under Management</span><strong id="desk-aum">—</strong><small id="desk-aum-note"></small></article>
+                <article class="stat-card"><span>Business Partners</span><strong id="desk-clients">—</strong><small>Retail · Private · Institutional</small></article>
+                <article class="stat-card"><span>Discretionary Share</span><strong id="desk-discretionary">—</strong><small>of total AuM</small></article>
+                <article class="stat-card"><span>Open Restriction Flags</span><strong id="desk-flags">—</strong><small id="desk-flags-note"></small></article>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Business Partner</th>
+                            <th>Segment</th>
+                            <th>Service Type</th>
+                            <th>Target Model</th>
+                            <th class="num">AuM</th>
+                            <th class="num">Max Drift</th>
+                            <th>Compliance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="desk-table-body">
+                        <tr><td colspan="7">Loading client book…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section container" id="portfolio-detail-section" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow" id="detail-eyebrow">Container</p>
+                    <h2 id="detail-title">—</h2>
+                </div>
+                <button class="btn btn-primary" id="run-rebalance-btn" type="button">Run rebalancing</button>
+            </div>
+
+            <div class="allocation-grid">
+                <div class="card chart-card">
+                    <h3>Asset-class drift vs target model</h3>
+                    <div class="chart-body"><canvas id="deskDriftChart"></canvas></div>
+                </div>
+                <div class="list-card">
+                    <h3>Current vs target allocation</h3>
+                    <div class="table-wrap" style="border:0;">
+                        <table style="min-width:0;">
+                            <thead>
+                                <tr><th>Asset class</th><th class="num">Current</th><th class="num">Target</th><th class="num">Drift</th></tr>
+                            </thead>
+                            <tbody id="detail-classes-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="allocation-grid" style="margin-top:14px;">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Position</th><th>Class</th><th>Mandate</th><th class="num">Value</th><th class="num">Weight</th></tr>
+                        </thead>
+                        <tbody id="detail-positions-body"></tbody>
+                    </table>
+                </div>
+                <div class="list-card">
+                    <h3>Restriction engine</h3>
+                    <div id="restriction-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section container" id="orders-section" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Pre-Trade Compliance</p>
+                    <h2>Rebalancing proposal</h2>
+                </div>
+                <div class="mini-note" id="orders-verdict"></div>
+            </div>
+            <div class="allocation-grid">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Instrument</th><th>Class</th><th>Side</th><th class="num">Amount (CHF)</th></tr>
+                        </thead>
+                        <tbody id="orders-table-body"></tbody>
+                    </table>
+                </div>
+                <div class="list-card">
+                    <h3>Post-trade restriction check</h3>
+                    <div id="pretrade-list"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <p>Bottom-up portfolio analytics: Return Assets for long-term growth, Diversifying Assets for protection.</p>
+        </div>
+        <div class="container copyright">© 2026 Rotshild Portfolio Intelligence. For demonstration purposes.</div>
+    </footer>
+
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script type="module" src="/static/js/desk.js"></script>
+</body>
+</html>

@@ -368,6 +368,31 @@ th.num, td.num { text-align: right; }
 .save-flash { font-size: 0.8rem; color: var(--up); font-weight: 600; }
 
 /* ---------------------------------------------------------------- */
+/*  PFM Desk                                                        */
+/* ---------------------------------------------------------------- */
+.warn { color: var(--gold); }
+/* Desk detail/blotter tables live in half-width cards — let them shrink. */
+#portfolio-detail-section table, #orders-section table { min-width: 480px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em;
+  border-radius: 4px; padding: 3px 9px; border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.badge.positive { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); }
+.badge.warn { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+.badge.negative { color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, transparent); }
+
+.restriction-item { padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.restriction-item:last-child { border-bottom: 0; }
+.restriction-item .r-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 4px;
+}
+.restriction-item .r-rule { font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+.restriction-item .r-body { font-size: 0.78rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- */
 /*  News                                                            */
 /* ---------------------------------------------------------------- */
 .filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
