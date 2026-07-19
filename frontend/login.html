@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Sign in to persist your portfolio configuration and allocation targets.">
+    <title>Rotshild | Sign in</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2214%22 fill=%22%2314203a%22/><text x=%2250%22 y=%2268%22 font-size=%2254%22 text-anchor=%22middle%22 fill=%22%23c9a558%22 font-family=%22Georgia%22>R</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <nav class="site-nav" id="site-nav">
+                <a href="/" data-route="/" data-i18n="nav_dashboard">Dashboard</a>
+                <a href="/allocation" data-route="/allocation" data-i18n="nav_allocation">Allocation</a>
+                <a href="/desk" data-route="/desk" data-i18n="nav_desk">PFM Desk</a>
+                <a href="/news" data-route="/news" data-i18n="nav_news">News</a>
+                <div class="lang-toggle" role="group" aria-label="Language">
+                    <button type="button" data-lang="EN" class="active">EN</button>
+                    <button type="button" data-lang="DE">DE</button>
+                </div>
+            </nav>
+            <button class="menu-btn" id="menu-btn" type="button" aria-label="Toggle navigation">☰</button>
+        </div>
+    </header>
+
+    <main class="auth-wrap">
+        <div class="auth-card" id="auth-card">
+            <span class="brand-mark">ROTSHILD</span>
+            <p class="auth-sub">Sign in to persist your portfolio configuration and allocation targets across devices.</p>
+
+            <div id="auth-forms">
+                <div class="auth-tabs">
+                    <button type="button" id="tab-signin" class="active">Sign in</button>
+                    <button type="button" id="tab-signup">Create account</button>
+                </div>
+                <form class="auth-form" id="auth-form">
+                    <label><span>Email</span>
+                        <input id="auth-email" type="email" autocomplete="email" placeholder="name@example.com" required>
+                    </label>
+                    <label><span>Password</span>
+                        <input id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••" minlength="6" required>
+                    </label>
+                    <p class="auth-error" id="auth-error"></p>
+                    <button class="btn btn-primary" id="auth-submit" type="submit" style="width:100%;">Sign in</button>
+                </form>
+                <div class="auth-alt" id="auth-mode-note">
+                    Firebase not configured yet — running in <strong>demo mode</strong>: authentication and cloud persistence are simulated locally.
+                </div>
+            </div>
+
+            <div id="auth-session" class="auth-session" hidden>
+                <p class="auth-sub" style="margin-bottom:0;">Signed in as</p>
+                <strong id="session-email"></strong>
+                <div class="actions-row" style="justify-content:center;">
+                    <a class="btn btn-primary" href="/">Open dashboard</a>
+                    <button class="btn btn-outline" id="signout-btn" type="button" data-i18n="sign_out">Sign out</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="/static/js/login.js"></script>
+</body>
+</html>

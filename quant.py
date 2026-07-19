@@ -96,6 +96,37 @@ def portfolio_returns(returns: pd.DataFrame, weights: dict[str, float]) -> pd.Se
     return (returns[cols] * w).sum(axis=1)
 
 
+def simple_beta(asset_returns: pd.Series, benchmark_returns: pd.Series) -> float:
+    """Full-sample CAPM beta: cov(asset, bench) / var(bench)."""
+    joined = pd.concat([asset_returns, benchmark_returns], axis=1).dropna()
+    if len(joined) < 2:
+        return float("nan")
+    var = joined.iloc[:, 1].var()
+    if var == 0 or np.isnan(var):
+        return float("nan")
+    return float(joined.iloc[:, 0].cov(joined.iloc[:, 1]) / var)
+
+
+def asset_contributions(
+    returns: pd.DataFrame, weights: dict[str, float]
+) -> dict[str, float]:
+    """Approximate contribution of each asset to total portfolio return.
+
+    Contribution_i = weight_i × cumulative return of asset i over the window
+    (the standard buy-and-hold attribution approximation).
+    """
+    cols = [c for c in returns.columns if c in weights]
+    if not cols:
+        return {}
+    w = np.array([weights[c] for c in cols], dtype=float)
+    total = w.sum()
+    if total == 0:
+        return {c: 0.0 for c in cols}
+    w = w / total
+    cumulative = (1 + returns[cols].fillna(0)).prod() - 1
+    return {c: float(w[i] * cumulative[c]) for i, c in enumerate(cols)}
+
+
 def rolling_capm(
     asset_returns: pd.Series,
     benchmark_returns: pd.Series,

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Asset-by-asset rebalancing: security-level target weights rolled up into asset-class and dual-mandate allocation.">
+    <title>Rotshild | Allocation &amp; Rebalancing</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2214%22 fill=%22%2314203a%22/><text x=%2250%22 y=%2268%22 font-size=%2254%22 text-anchor=%22middle%22 fill=%22%23c9a558%22 font-family=%22Georgia%22>R</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <nav class="site-nav" id="site-nav">
+                <a href="/" data-route="/" data-i18n="nav_dashboard">Dashboard</a>
+                <a href="/allocation" data-route="/allocation" data-i18n="nav_allocation">Allocation</a>
+                <a href="/desk" data-route="/desk" data-i18n="nav_desk">PFM Desk</a>
+                <a href="/news" data-route="/news" data-i18n="nav_news">News</a>
+                <div class="lang-toggle" role="group" aria-label="Language">
+                    <button type="button" data-lang="EN" class="active">EN</button>
+                    <button type="button" data-lang="DE">DE</button>
+                </div>
+                <button class="ghost-link" id="login-btn" type="button" data-i18n="sign_in">Sign in</button>
+            </nav>
+            <button class="menu-btn" id="menu-btn" type="button" aria-label="Toggle navigation">☰</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="section container">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Bottom-Up · Rebalancing</p>
+                    <h2>Asset-by-asset rebalancing</h2>
+                </div>
+                <div class="mini-note">Targets are set security by security; class and mandate allocations are consequences, not inputs. <span class="status-pill" id="data-source-pill" style="display:inline-flex; margin-top:6px;">Loading…</span></div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Security</th>
+                            <th>Class</th>
+                            <th>Mandate</th>
+                            <th class="num">Current %</th>
+                            <th class="num">Target %</th>
+                            <th>Drift</th>
+                        </tr>
+                    </thead>
+                    <tbody id="allocation-editor-body">
+                        <tr><td colspan="6">Loading holdings…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="actions-row" style="margin-top:16px;">
+                <button class="btn btn-primary" id="compute-trades-btn" type="button">Compute trades</button>
+                <button class="btn btn-outline" id="apply-targets-btn" type="button">Apply targets to dashboard</button>
+                <button class="btn btn-outline" id="save-cloud-btn" type="button">Save allocation</button>
+                <span class="form-note">Target total: <strong id="target-total">100.0%</strong> · normalised on compute</span>
+                <span class="save-flash" id="save-flash"></span>
+            </div>
+        </section>
+
+        <section class="section container" id="trades-section" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Execution</p>
+                    <h2>Proposed trades</h2>
+                </div>
+                <div class="mini-note" data-i18n="proposed_trades_net">Buys and sells net to zero by construction.</div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Security</th>
+                            <th>Side</th>
+                            <th class="num">Current</th>
+                            <th class="num">Target</th>
+                            <th class="num">Drift</th>
+                            <th class="num">Trade value (CHF)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-table-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="allocation" class="section container">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Roll-Up · Consequence of security selection</p>
+                    <h2>Resulting allocation</h2>
+                </div>
+            </div>
+            <div class="allocation-grid">
+                <div class="card chart-card chart-card-tall">
+                    <h3>By asset class</h3>
+                    <div class="chart-body"><canvas id="allocationChart"></canvas></div>
+                </div>
+                <div>
+                    <div class="list-card" id="allocation-list"></div>
+                    <div class="list-card" style="margin-top:14px;">
+                        <h3>Dual mandate</h3>
+                        <div class="chart-body" style="position:relative;height:190px;"><canvas id="mandateChart"></canvas></div>
+                        <div id="mandate-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <p>Bottom-up portfolio analytics: Return Assets for long-term growth, Diversifying Assets for protection.</p>
+        </div>
+        <div class="container copyright">© 2026 Rotshild Portfolio Intelligence. For demonstration purposes.</div>
+    </footer>
+
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script type="module" src="/static/js/allocation.js"></script>
+</body>
+</html>
