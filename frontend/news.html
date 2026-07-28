@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Market intelligence ordered bottom-up: stories on held securities first, then rates, credit and macro context.">
+    <title>Rotshild | Market Intelligence</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2214%22 fill=%22%2314203a%22/><text x=%2250%22 y=%2268%22 font-size=%2254%22 text-anchor=%22middle%22 fill=%22%23c9a558%22 font-family=%22Georgia%22>R</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <nav class="site-nav" id="site-nav">
+                <a href="/" data-route="/" data-i18n="nav_dashboard">Dashboard</a>
+                <a href="/allocation" data-route="/allocation" data-i18n="nav_allocation">Allocation</a>
+                <a href="/desk" data-route="/desk" data-i18n="nav_desk">PFM Desk</a>
+                <a href="/news" data-route="/news" data-i18n="nav_news">News</a>
+                <div class="lang-toggle" role="group" aria-label="Language">
+                    <button type="button" data-lang="EN" class="active">EN</button>
+                    <button type="button" data-lang="DE">DE</button>
+                </div>
+                <button class="ghost-link" id="login-btn" type="button" data-i18n="sign_in">Sign in</button>
+            </nav>
+            <button class="menu-btn" id="menu-btn" type="button" aria-label="Toggle navigation">☰</button>
+        </div>
+    </header>
+
+    <main>
+        <section id="news" class="section container">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Market Context</p>
+                    <h2>Market intelligence</h2>
+                </div>
+                <div class="mini-note">Ordered bottom-up: stories touching held securities come first, macro context follows.</div>
+            </div>
+            <div class="filter-row" id="news-filters">
+                <button class="chip active" data-filter="all" type="button">All</button>
+                <button class="chip" data-filter="holdings" type="button">Your holdings</button>
+                <button class="chip" data-filter="Company" type="button">Company</button>
+                <button class="chip" data-filter="Rates & Credit" type="button">Rates &amp; credit</button>
+                <button class="chip" data-filter="Macro" type="button">Macro</button>
+            </div>
+            <div class="news-grid" id="news-grid">
+                <article class="news-card"><p>Loading market intelligence…</p></article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <a href="/" class="brand"><span class="brand-mark">ROTSHILD</span><span class="brand-sub">Portfolio Intelligence</span></a>
+            <p>Bottom-up portfolio analytics: Return Assets for long-term growth, Diversifying Assets for protection.</p>
+        </div>
+        <div class="container copyright">© 2026 Rotshild Portfolio Intelligence. For demonstration purposes.</div>
+    </footer>
+
+    <script type="module" src="/static/js/news.js"></script>
+</body>
+</html>

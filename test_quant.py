@@ -57,6 +57,22 @@ def test_rebalance_trades_sum_to_zero():
     assert approx(a_row["Trade Value"], 200_000, tol=1.0)
 
 
+def test_simple_beta_recovers_scaling():
+    rng = np.random.default_rng(3)
+    bench = pd.Series(rng.normal(0.0004, 0.01, 300))
+    asset = 0.8 * bench + rng.normal(0, 0.0005, 300)
+    assert approx(quant.simple_beta(asset, bench), 0.8, tol=0.05)
+
+
+def test_asset_contributions_sum_and_split():
+    idx = pd.date_range("2020-01-01", periods=2)
+    rets = pd.DataFrame({"A": [0.10, 0.0], "B": [0.0, 0.0]}, index=idx)
+    contrib = quant.asset_contributions(rets, {"A": 0.5, "B": 0.5})
+    # A returned 10% at half weight → 5% contribution; B contributed nothing.
+    assert approx(contrib["A"], 0.05)
+    assert approx(contrib["B"], 0.0)
+
+
 def test_portfolio_returns_renormalises():
     idx = pd.date_range("2020-01-01", periods=3)
     rets = pd.DataFrame({"A": [0.01, 0.02, -0.01], "B": [0.0, 0.01, 0.02]}, index=idx)

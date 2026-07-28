@@ -1,415 +1,626 @@
-"""Rotshild Quant Dashboard — Streamlit application.
+"""Rotshild Portfolio Dashboard — HTTP application layer.
 
-A Swiss private-banking style portfolio analytics tool for quantitative
-portfolio managers. Run with:
-
-    streamlit run app.py
+Serves the frontend pages and a JSON API with a normalized holdings model:
+one instrument per row, persisted in SQLite, dynamically priced, and valued in
+CHF for portfolio roll-ups.
 """
 
 from __future__ import annotations
 
-import numpy as np
+import json
+import os
+import webbrowser
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
 import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
 
-import quant
-from data import asset_class, load_prices
-from i18n import tr
-
-# --------------------------------------------------------------------------- #
-# Theme
-# --------------------------------------------------------------------------- #
-NAVY = "#0B1F3A"
-NAVY_2 = "#12294A"
-CHARCOAL = "#2A2F3A"
-GOLD = "#C5A25A"
-GOLD_SOFT = "#D8B36A"
-SILVER = "#C0C4CC"
-SLATE = "#4F6D9A"
-TEAL = "#4C8C8C"
-GREEN = "#1E8E5A"
-RED = "#C0392B"
-INK = "#1C2430"
-
-CLASS_COLORS = {"Equities": SLATE, "Fixed Income": TEAL, "Alternatives": GOLD_SOFT}
-
-st.set_page_config(
-    page_title="Rotshild Quant Dashboard",
-    page_icon="⚜️",
-    layout="wide",
-    initial_sidebar_state="expanded",
+import pfm
+from data import fetch_latest_prices, fundamentals, load_news, load_prices
+from i18n import TRANSLATIONS
+from portfolio_calcs import (
+    benchmark_comparison,
+    position_values_chf,
+    risk_free_aware_metrics,
+    total_portfolio_value_chf,
+)
+from portfolio_store import (
+    BUCKET_DIVERSIFY,
+    BUCKET_RETURN,
+    add_ticker_workflow,
+    deactivate_holding,
+    get_holding,
+    init_db,
+    list_holdings,
+    sector_lookup,
+    list_ticker_catalog,
+    mark_price_updates,
+    upsert_holding,
+)
+from quant import (
+    asset_contributions,
+    daily_returns,
+    portfolio_returns,
+    rebalance_trades,
+    rolling_capm,
+    simple_beta,
+    summary_metrics,
 )
 
-st.markdown(
-    f"""
-    <style>
-      .stApp {{ background: #F4F6F9; }}
-      section[data-testid="stSidebar"] {{
-          background: linear-gradient(180deg, {NAVY} 0%, {NAVY_2} 100%);
-      }}
-      section[data-testid="stSidebar"] * {{ color: #E8ECF3 !important; }}
-      section[data-testid="stSidebar"] input,
-      section[data-testid="stSidebar"] textarea {{
-          background: rgba(255,255,255,0.06) !important;
-          color: #FFFFFF !important;
-          border: 1px solid rgba(197,162,90,0.35) !important;
-      }}
-      .app-header {{
-          display:flex; align-items:baseline; gap:14px;
-          border-bottom: 2px solid {GOLD}; padding-bottom: 8px; margin-bottom: 6px;
-      }}
-      .app-header h1 {{ color:{NAVY}; font-size:1.7rem; margin:0; letter-spacing:.5px; }}
-      .app-header span {{ color:{CHARCOAL}; font-size:.95rem; }}
-      .kpi {{
-          background:#FFFFFF; border:1px solid #E3E7ED; border-left:4px solid {GOLD};
-          border-radius:10px; padding:16px 18px;
-          box-shadow:0 2px 10px rgba(11,31,58,0.06);
-      }}
-      .kpi .label {{ color:{CHARCOAL}; font-size:.78rem; text-transform:uppercase;
-                     letter-spacing:.06em; }}
-      .kpi .value {{ color:{NAVY}; font-size:1.9rem; font-weight:700; line-height:1.1; }}
-      .kpi .delta {{ font-size:.82rem; font-weight:600; }}
-      .up {{ color:{GREEN}; }} .down {{ color:{RED}; }}
-      .stButton>button {{
-          background: linear-gradient(90deg, {GOLD} 0%, {GOLD_SOFT} 100%);
-          color:{NAVY}; font-weight:700; border:none; border-radius:8px;
-          padding:.55rem 1.1rem;
-      }}
-      div[data-baseweb="tag"] {{ background:{SLATE} !important; }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+ROOT = Path(__file__).resolve().parent
+FRONTEND_ROOT = ROOT / "frontend"
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = int(os.environ.get("PORT", "8000"))
+
+DEFAULT_BENCHMARK = "SPY"
+DEFAULT_LOOKBACK = 252
+DEFAULT_RISK_FREE = 0.02
+
+PAGE_ROUTES = {
+    "/": "index.html",
+    "/login": "login.html",
+    "/news": "news.html",
+    "/allocation": "allocation.html",
+    "/desk": "desk.html",
+}
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 # --------------------------------------------------------------------------- #
-# Helpers
+# Optional Firebase Admin (server-side token verification + Firestore)
 # --------------------------------------------------------------------------- #
-def kpi_card(label: str, value: str, delta: str | None, positive: bool | None) -> str:
-    if delta is None:
-        delta_html = ""
+def _init_firebase_admin():
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+
+        key_path = os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS", str(ROOT / "serviceAccount.json")
+        )
+        if not Path(key_path).exists():
+            return None
+        cred = credentials.Certificate(key_path)
+        return firebase_admin.initialize_app(cred)
+    except Exception:
+        return None
+
+
+FIREBASE_APP = _init_firebase_admin()
+
+
+def _verify_bearer(header: str | None) -> str | None:
+    if not FIREBASE_APP or not header or not header.startswith("Bearer "):
+        return None
+    from firebase_admin import auth
+
+    try:
+        return auth.verify_id_token(header.removeprefix("Bearer "))["uid"]
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Request parsing
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class RequestParams:
+    benchmark: str
+    live: bool
+    lookback: int
+    risk_free: float
+    bucket: str | None
+
+
+def _parse_params(query: dict[str, list[str]]) -> RequestParams:
+    def first(key: str, default: str) -> str:
+        return (query.get(key, [default])[0] or default).strip()
+
+    benchmark = first("benchmark", DEFAULT_BENCHMARK).upper()
+    live = first("live", "1").lower() not in {"0", "false", "no", "off"}
+    lookback = max(30, int(float(first("lookback", str(DEFAULT_LOOKBACK)))))
+    risk_free = float(first("risk_free", str(DEFAULT_RISK_FREE * 100))) / 100.0
+
+    raw_bucket = first("bucket", "")
+    bucket = None
+    if raw_bucket and raw_bucket.upper() != "ALL":
+        if raw_bucket not in {BUCKET_RETURN, BUCKET_DIVERSIFY}:
+            raise ValueError("bucket must be ALL, Return Assets, or Diversifying Assets")
+        bucket = raw_bucket
+
+    return RequestParams(benchmark=benchmark, live=live, lookback=lookback, risk_free=risk_free, bucket=bucket)
+
+
+def _format_dates(index: pd.Index) -> list[str]:
+    return [pd.Timestamp(value).strftime("%Y-%m-%d") for value in index]
+
+
+def _clean(obj):
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean(v) for v in obj]
+    if isinstance(obj, float) and (obj != obj or obj in (float("inf"), float("-inf"))):
+        return None
+    return obj
+
+
+def _refresh_holdings_prices(holdings: list[dict], use_live: bool, tickers: list[str] | None = None) -> dict:
+    if tickers:
+        ticker_set = {t.strip().upper() for t in tickers if t.strip()}
+        pool = [h["ticker"] for h in holdings if h.get("is_active") and h["ticker"] in ticker_set]
     else:
-        cls = "up" if positive else "down"
-        arrow = "▲" if positive else "▼"
-        delta_html = f'<div class="delta {cls}">{arrow} {delta}</div>'
-    return (
-        f'<div class="kpi"><div class="label">{label}</div>'
-        f'<div class="value">{value}</div>{delta_html}</div>'
-    )
+        pool = [h["ticker"] for h in holdings if h.get("is_active")]
+
+    if not pool:
+        return {"source": "None", "synthetic": False, "missing": []}
+
+    result = fetch_latest_prices(pool, use_live=use_live)
+    mark_price_updates(result.prices, updated_at=_now_iso())
+    return {
+        "source": result.source,
+        "synthetic": result.synthetic,
+        "missing": result.missing,
+    }
 
 
-def fmt_pct(x: float, digits: int = 1) -> str:
-    if x is None or np.isnan(x):
-        return "—"
-    if np.isinf(x):
-        return "∞"
-    return f"{x * 100:.{digits}f}%"
+def _load_fx_to_chf(currencies: set[str], use_live: bool) -> tuple[dict[str, float], list[str]]:
+    rates: dict[str, float] = {"CHF": 1.0}
+    unresolved: list[str] = []
 
+    needed = sorted(c for c in currencies if c != "CHF")
+    if not needed:
+        return rates, unresolved
 
-def fmt_num(x: float, digits: int = 2) -> str:
-    if x is None or np.isnan(x):
-        return "—"
-    if np.isinf(x):
-        return "∞"
-    return f"{x:.{digits}f}"
+    fx_tickers = [f"{c}CHF=X" for c in needed]
+    fx_result = fetch_latest_prices(fx_tickers, use_live=use_live)
+    for currency in needed:
+        fx_ticker = f"{currency}CHF=X"
+        value = fx_result.prices.get(fx_ticker)
+        if value is None or value <= 0:
+            unresolved.append(currency)
+            continue
+        rates[currency] = float(value)
 
-
-@st.cache_data(show_spinner=False)
-def get_prices(tickers: tuple[str, ...], benchmark: str, days: int, live: bool):
-    pd_obj = load_prices(list(tickers), benchmark, days, live)
-    return pd_obj.prices, pd_obj.is_synthetic, pd_obj.source
-
-
-def chart_header(text: str) -> None:
-    """Consistent chart title rendered above the plot (avoids legend overlap)."""
-    st.markdown(
-        f'<div style="color:{NAVY};font-weight:700;font-size:1.02rem;'
-        f'margin:2px 0 -6px 4px;">{text}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def base_chart_layout(height: int = 320, legend: bool = True) -> dict:
-    return dict(
-        height=height,
-        margin=dict(l=10, r=10, t=24, b=10),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        showlegend=legend,
-        font=dict(color=INK, family="Inter, Roboto, sans-serif"),
-        xaxis=dict(gridcolor="#EEF1F5", zeroline=False),
-        yaxis=dict(gridcolor="#EEF1F5", zeroline=False),
-        legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
-    )
+    return rates, unresolved
 
 
 # --------------------------------------------------------------------------- #
-# Sidebar
+# Dashboard payload — bottom-up holdings first, then roll-ups
 # --------------------------------------------------------------------------- #
-lang = st.sidebar.radio("🌐 EN / DE", ["EN", "DE"], horizontal=True, index=0)
+def _build_dashboard_payload(params: RequestParams) -> dict:
+    all_holdings = list_holdings(include_inactive=False)
+    if not all_holdings:
+        raise RuntimeError("No holdings found. Add a ticker row first.")
 
-st.sidebar.markdown(f"### {tr('config', lang)}")
-tickers_raw = st.sidebar.text_input(
-    tr("tickers", lang), value="AAPL, MSFT, TLT, GLD", help=tr("tickers_help", lang)
-)
-benchmark = st.sidebar.text_input(tr("benchmark", lang), value="SPY").strip().upper()
-rf_annual = st.sidebar.number_input(
-    tr("risk_free", lang), min_value=0.0, max_value=0.10, value=0.02, step=0.005,
-    format="%.3f",
-)
-lookback = st.sidebar.slider(tr("lookback", lang), 126, 756, 504, step=21)
-use_live = st.sidebar.checkbox(tr("use_live", lang), value=True)
+    price_meta = _refresh_holdings_prices(all_holdings, use_live=params.live)
+    holdings = list_holdings(include_inactive=False)
+    holdings = [h for h in holdings if h.get("quantity", 0) > 0]
+    if params.bucket:
+        holdings = [h for h in holdings if h.get("portfolio_bucket") == params.bucket]
+    if not holdings:
+        scope = params.bucket or "all buckets"
+        raise RuntimeError(f"No non-zero holdings available for {scope}.")
 
-st.sidebar.markdown(f"### {tr('nav', lang)}")
-sections = ["market_overview", "quant_risk", "rebalancing", "export"]
-section = st.sidebar.radio(
-    "nav", sections, format_func=lambda s: tr(s, lang), label_visibility="collapsed"
-)
-
-tickers = [t.strip().upper() for t in tickers_raw.split(",") if t.strip()]
-if not tickers:
-    st.warning("Enter at least one ticker symbol.")
-    st.stop()
-
-prices, is_synthetic, source = get_prices(tuple(tickers), benchmark, lookback, use_live)
-returns = prices.pct_change().dropna(how="all")
-
-# Equal-weight portfolio across the entered tickers (benchmark excluded).
-port_tickers = [t for t in tickers if t in prices.columns]
-equal_w = {t: 1.0 / len(port_tickers) for t in port_tickers}
-port_ret = quant.portfolio_returns(returns, equal_w)
-port_prices = 100 * (1 + port_ret).cumprod()
-
-# --------------------------------------------------------------------------- #
-# Header + data-source banner
-# --------------------------------------------------------------------------- #
-st.markdown(
-    f'<div class="app-header"><h1>⚜️ {tr("app_title", lang)}</h1>'
-    f'<span>{tr("app_subtitle", lang)}</span></div>',
-    unsafe_allow_html=True,
-)
-if is_synthetic:
-    st.info("⚙️ " + tr("synthetic_banner", lang))
-else:
-    st.success("🟢 " + tr("live_banner", lang))
-
-period_txt = f"{prices.index[0].date()} → {prices.index[-1].date()}"
-st.caption(f"{tr('data_source', lang)}: **{source}**  ·  {tr('period_covered', lang)}: {period_txt}")
-
-
-# =========================================================================== #
-# Section 1 — Market Overview
-# =========================================================================== #
-if section == "market_overview":
-    pm = quant.summary_metrics(port_prices, rf_annual)
-    bm = quant.summary_metrics(prices[benchmark], rf_annual) if benchmark in prices else {}
-
-    cols = st.columns(4)
-    specs = [
-        ("cagr", pm["cagr"], bm.get("cagr"), fmt_pct, True),
-        ("max_drawdown", pm["max_drawdown"], bm.get("max_drawdown"), fmt_pct, False),
-        ("sharpe", pm["sharpe"], bm.get("sharpe"), fmt_num, True),
-        ("sortino", pm["sortino"], bm.get("sortino"), fmt_num, True),
-    ]
-    for col, (key, val, bench_val, fmt, higher_better) in zip(cols, specs):
-        delta_txt, positive = None, None
-        if bench_val is not None and not np.isnan(bench_val) and not np.isnan(val):
-            diff = val - bench_val
-            positive = (diff >= 0) if higher_better else (diff <= 0)
-            delta_txt = f"{fmt(abs(diff))} {tr('vs_benchmark', lang)}"
-        col.markdown(
-            kpi_card(tr(key, lang), fmt(val), delta_txt, positive),
-            unsafe_allow_html=True,
+    fx_rates, unresolved_fx = _load_fx_to_chf({h["currency"] for h in holdings}, use_live=params.live)
+    if unresolved_fx:
+        raise RuntimeError(
+            "Missing FX conversion to CHF for currencies: " + ", ".join(sorted(unresolved_fx))
         )
 
-    st.markdown("####")
-    chart_header(tr("cumulative_perf", lang))
-    fig = go.Figure()
-    rebased = prices / prices.iloc[0] * 100
-    for t in port_tickers:
-        fig.add_trace(go.Scatter(
-            x=rebased.index, y=rebased[t], name=t, mode="lines",
-            line=dict(width=1.6, color=CLASS_COLORS.get(asset_class(t), SLATE)),
-            opacity=0.55,
-        ))
-    fig.add_trace(go.Scatter(
-        x=port_prices.index, y=port_prices, name=tr("portfolio", lang),
-        line=dict(width=3.2, color=NAVY),
-    ))
-    if benchmark in rebased:
-        fig.add_trace(go.Scatter(
-            x=rebased.index, y=rebased[benchmark], name=benchmark,
-            line=dict(width=2, color=GOLD, dash="dash"),
-        ))
-    fig.update_layout(**base_chart_layout(height=420))
-    st.plotly_chart(fig, use_container_width=True)
+    missing_prices = [h["ticker"] for h in holdings if h.get("current_price") in (None, 0)]
+    if missing_prices:
+        raise RuntimeError("Missing current price for: " + ", ".join(sorted(missing_prices)))
 
+    position_values = position_values_chf(holdings, fx_rates)
+    total_value = total_portfolio_value_chf(position_values)
+    if total_value <= 0:
+        raise RuntimeError("Portfolio value is zero. Increase at least one holding quantity.")
 
-# =========================================================================== #
-# Section 2 — Quant Risk & CAPM
-# =========================================================================== #
-elif section == "quant_risk":
-    if benchmark not in returns.columns:
-        st.error(f"Benchmark {benchmark} not available in the data.")
-        st.stop()
-
-    asset = st.selectbox(
-        tr("select_asset", lang), [tr("portfolio", lang), *port_tickers]
-    )
-    asset_ret = port_ret if asset == tr("portfolio", lang) else returns[asset]
-    capm = quant.rolling_capm(
-        asset_ret, returns[benchmark], quant.ROLLING_WINDOW, rf_annual
+    tickers = [h["ticker"] for h in holdings]
+    period_days = max(params.lookback + 90, 360)
+    price_data = load_prices(
+        tickers,
+        benchmark=params.benchmark,
+        period_days=period_days,
+        use_live=params.live,
     )
 
-    if capm.empty:
-        st.warning("Not enough observations for a rolling regression.")
-        st.stop()
+    prices = price_data.prices
+    benchmark = params.benchmark if params.benchmark in prices.columns else prices.columns[-1]
+    portfolio_tickers = [t for t in tickers if t in prices.columns and t != benchmark]
+    if not portfolio_tickers:
+        raise RuntimeError("No valid ticker history available for the selected holdings.")
 
-    c1, c2 = st.columns(2)
-    c1.markdown(
-        kpi_card(tr("current_beta", lang), fmt_num(capm["beta"].iloc[-1]), None, None),
-        unsafe_allow_html=True,
+    returns = daily_returns(prices).tail(params.lookback)
+    if returns.empty:
+        raise RuntimeError("Not enough price history to compute metrics.")
+
+    weights = {t: position_values[t] / total_value for t in portfolio_tickers}
+    port_ret = portfolio_returns(returns[portfolio_tickers], weights)
+    if port_ret.empty:
+        raise RuntimeError("Could not compute portfolio returns from the current holdings.")
+
+    bench_ret = returns[benchmark]
+    portfolio_values = total_value * (1 + port_ret).cumprod()
+    bench_series = prices[benchmark].reindex(portfolio_values.index).ffill().dropna()
+    if bench_series.empty:
+        bench_series = pd.Series(total_value, index=portfolio_values.index)
+    else:
+        bench_series = bench_series / bench_series.iloc[0] * total_value
+
+    portfolio_metrics = risk_free_aware_metrics(portfolio_values, params.risk_free)
+    benchmark_metrics = risk_free_aware_metrics(bench_series, params.risk_free)
+    comparison = benchmark_comparison(portfolio_values, bench_series)
+    capm = rolling_capm(
+        port_ret, bench_ret, window=min(63, max(2, len(port_ret) - 1)), rf_annual=params.risk_free
     )
-    c2.markdown(
-        kpi_card(tr("current_alpha", lang), fmt_pct(capm["alpha"].iloc[-1], 2), None, None),
-        unsafe_allow_html=True,
-    )
+    contributions = asset_contributions(returns[portfolio_tickers], weights)
 
-    st.markdown("####")
-    left, right = st.columns(2)
-    with left:
-        chart_header(tr("rolling_beta", lang))
-        fig_b = go.Figure()
-        fig_b.add_trace(go.Scatter(
-            x=capm.index, y=capm["beta"], line=dict(width=2.4, color=SLATE), name="β"
-        ))
-        fig_b.add_hline(y=1.0, line=dict(color=SILVER, dash="dot"))
-        fig_b.update_layout(**base_chart_layout(legend=False))
-        st.plotly_chart(fig_b, use_container_width=True)
-    with right:
-        chart_header(tr("annualized_alpha", lang))
-        fig_a = go.Figure()
-        fig_a.add_trace(go.Scatter(
-            x=capm.index, y=capm["alpha"], line=dict(width=2.4, color=GOLD),
-            fill="tozeroy", fillcolor="rgba(197,162,90,0.12)", name="α",
-        ))
-        fig_a.add_hline(y=0.0, line=dict(color=SILVER, dash="dot"))
-        fig_a.update_layout(**base_chart_layout(legend=False))
-        fig_a.update_yaxes(tickformat=".0%")
-        st.plotly_chart(fig_a, use_container_width=True)
+    current_value = float(portfolio_values.iloc[-1])
+    previous_value = float(portfolio_values.iloc[-2]) if len(portfolio_values) > 1 else current_value
+    week_value = float(portfolio_values.iloc[-6]) if len(portfolio_values) > 5 else float(portfolio_values.iloc[0])
+    first_value = float(portfolio_values.iloc[0])
 
+    holdings_by_ticker = {h["ticker"]: h for h in holdings}
+    allocation_by_sector: dict[str, float] = {}
+    allocation_by_bucket: dict[str, float] = {}
+    payload_holdings: list[dict] = []
 
-# =========================================================================== #
-# Section 3 — Rebalancing Engine
-# =========================================================================== #
-elif section == "rebalancing":
-    left, right = st.columns([1, 1.2])
+    for ticker in portfolio_tickers:
+        h = holdings_by_ticker[ticker]
+        series = prices[ticker].reindex(portfolio_values.index).ffill().dropna()
+        if series.empty:
+            continue
 
-    # Allocation donut aggregated by asset class (equal-weight current book).
-    with left:
-        chart_header(tr("allocation", lang))
-        alloc = {}
-        for t in port_tickers:
-            alloc[asset_class(t)] = alloc.get(asset_class(t), 0) + equal_w[t]
-        donut = go.Figure(go.Pie(
-            labels=list(alloc), values=list(alloc.values()), hole=0.62,
-            marker=dict(colors=[CLASS_COLORS[k] for k in alloc]),
-            textinfo="label+percent",
-        ))
-        donut.update_layout(**base_chart_layout(height=340, legend=False))
-        st.plotly_chart(donut, use_container_width=True)
+        fx = fx_rates[h["currency"]]
+        native_price = float(h["current_price"])
+        price_chf = native_price * fx
+        value_chf = position_values[ticker]
+        weight = weights[ticker]
+        total_ret = float(series.iloc[-1] / series.iloc[0] - 1)
+        day_change = float(series.pct_change().iloc[-1] * 100) if len(series) > 1 else 0.0
 
-    with right:
-        pv = st.number_input(
-            tr("portfolio_value", lang), min_value=0.0, value=5_000_000.0,
-            step=100_000.0, format="%.0f",
+        allocation_by_sector[h["sector"]] = allocation_by_sector.get(h["sector"], 0.0) + weight
+        allocation_by_bucket[h["portfolio_bucket"]] = allocation_by_bucket.get(h["portfolio_bucket"], 0.0) + weight
+
+        payload_holdings.append(
+            {
+                "ticker": ticker,
+                "asset_name": h["asset_name"],
+                "portfolio_bucket": h["portfolio_bucket"],
+                "asset_class": h["sector"],
+                "mandate": h["portfolio_bucket"],
+                "sector": h["sector"],
+                "sub_sector": h["sub_sector"],
+                "currency": h["currency"],
+                "fx_to_chf": fx,
+                "price": native_price,
+                "price_chf": price_chf,
+                "change_24h": day_change,
+                "total_return": total_ret * 100,
+                "beta": simple_beta(returns[ticker], bench_ret),
+                "sharpe": summary_metrics(series, params.risk_free)["sharpe"],
+                "contribution": contributions.get(ticker, 0.0) * 100,
+                "quantity": float(h["quantity"]),
+                "value": value_chf,
+                "weight": weight * 100,
+                "last_updated": h["last_updated"],
+                "fundamentals": {
+                    **fundamentals(ticker),
+                    "name": h["asset_name"],
+                    "sector": h["sector"],
+                    "sub_sector": h["sub_sector"],
+                    "mandate": h["portfolio_bucket"],
+                    "asset_class": h["sector"],
+                },
+            }
         )
-        st.markdown(f"**{tr('weights_editor', lang)}**")
-        editor_df = pd.DataFrame({
-            "Instrument": port_tickers,
-            "Class": [asset_class(t) for t in port_tickers],
-            "Current %": [round(equal_w[t] * 100, 1) for t in port_tickers],
-            "Target %": [round(equal_w[t] * 100, 1) for t in port_tickers],
-        })
-        edited = st.data_editor(
-            editor_df, hide_index=True, use_container_width=True,
-            disabled=["Instrument", "Class", "Current %"],
-            column_config={
-                "Target %": st.column_config.NumberColumn(
-                    min_value=0.0, max_value=100.0, step=0.5, format="%.1f"
-                )
+
+    current_beta = float(capm["beta"].iloc[-1]) if not capm.empty else float("nan")
+    current_alpha = float(capm["alpha"].iloc[-1]) if not capm.empty else float("nan")
+
+    payload = {
+        "config": {
+            "benchmark": benchmark,
+            "risk_free": params.risk_free,
+            "lookback": params.lookback,
+            "live": params.live,
+            "bucket": params.bucket or "ALL",
+        },
+        "source": {
+            "label": price_data.source,
+            "synthetic": price_data.is_synthetic,
+            "holding_prices": price_meta,
+        },
+        "warnings": {
+            "missing_live_prices": price_meta["missing"],
+            "risk_free_note": (
+                "Risk-free input is annualized and converted to a daily rate in quant._daily_rf "
+                "for Sharpe/Sortino and excess-return CAPM calculations."
+            ),
+        },
+        "metrics": {
+            "portfolio": {
+                "value": current_value,
+                "daily_change": current_value - previous_value,
+                "weekly_change": current_value - week_value,
+                "total_change": current_value - first_value,
+                "total_return": current_value / first_value - 1,
+                "excess_return_vs_benchmark": comparison["excess_return"],
+                **portfolio_metrics,
             },
-            key="weights_editor",
-        )
-        if st.button("🧮 " + tr("calculate_trades", lang)):
-            cur = dict(zip(edited["Instrument"], edited["Current %"]))
-            tgt = dict(zip(edited["Instrument"], edited["Target %"]))
-            st.session_state["trades"] = quant.rebalance_trades(cur, tgt, pv)
+            "benchmark": {
+                "value": float(bench_series.iloc[-1]),
+                "total_return": comparison["benchmark_total_return"],
+                **benchmark_metrics,
+            },
+            "capm": {"beta": current_beta, "alpha": current_alpha},
+        },
+        "charts": {
+            "performance": {
+                "labels": _format_dates(portfolio_values.index),
+                "portfolio": [float(v) for v in portfolio_values],
+                "benchmark": [float(v) for v in bench_series.reindex(portfolio_values.index).ffill()],
+            },
+            "capm": {
+                "labels": _format_dates(capm.index),
+                "beta": [float(v) for v in capm["beta"]],
+                "alpha": [float(v) for v in capm["alpha"]],
+            },
+            "contribution": {
+                "labels": [h["ticker"] for h in payload_holdings],
+                "values": [h["contribution"] for h in payload_holdings],
+            },
+            "allocation": {
+                "labels": list(allocation_by_sector),
+                "values": [v * 100 for v in allocation_by_sector.values()],
+            },
+            "mandate": {
+                "labels": list(allocation_by_bucket),
+                "values": [v * 100 for v in allocation_by_bucket.values()],
+            },
+        },
+        "holdings": payload_holdings,
+    }
+    return _clean(payload)
 
-    if "trades" in st.session_state:
-        st.markdown(f"#### {tr('proposed_trades', lang)}")
-        trades = st.session_state["trades"].copy()
 
-        def action(v: float) -> str:
-            if abs(v) < 1e-6 * max(1.0, abs(trades["Trade Value"]).max()):
-                return tr("hold", lang)
-            return tr("buy", lang) if v > 0 else tr("sell", lang)
+# --------------------------------------------------------------------------- #
+# HTTP handler
+# --------------------------------------------------------------------------- #
+class PortfolioHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(FRONTEND_ROOT), **kwargs)
 
-        display = pd.DataFrame({
-            "Instrument": trades["Instrument"],
-            "Current Weight": (trades["Current Weight"] * 100).map(lambda x: f"{x:.1f}%"),
-            "Target Weight": (trades["Target Weight"] * 100).map(lambda x: f"{x:.1f}%"),
-            "Drift": (trades["Drift"] * 100).map(lambda x: f"{x:+.1f}%"),
-            "Action": trades["Trade Value"].map(action),
-            "Trade Value (CHF)": trades["Trade Value"].map(lambda x: f"{x:+,.0f}"),
+    def log_message(self, format: str, *args) -> None:
+        return
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+
+        if parsed.path == "/api/dashboard":
+            self._guarded(lambda: self._send_json(_build_dashboard_payload(_parse_params(query))))
+            return
+        if parsed.path == "/api/holdings":
+            self._guarded(lambda: self._send_json({"holdings": list_holdings(include_inactive=False)}))
+            return
+        if parsed.path == "/api/tickers":
+            self._guarded(lambda: self._send_json({"tickers": list_ticker_catalog()}))
+            return
+        if parsed.path == "/api/sector-map":
+            self._guarded(lambda: self._send_json({"sectors": sector_lookup()}))
+            return
+        if parsed.path == "/api/news":
+            tickers = query.get("tickers", [""])[0].strip()
+            if tickers:
+                held = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+            else:
+                held = [h["ticker"] for h in list_holdings(include_inactive=False) if h.get("quantity", 0) > 0]
+            self._guarded(lambda: self._send_json({"items": load_news(held)}))
+            return
+        if parsed.path == "/api/i18n":
+            self._send_json({"translations": TRANSLATIONS})
+            return
+        if parsed.path == "/api/pfm/desk":
+            self._guarded(lambda: self._send_json(pfm.desk_overview()))
+            return
+        if parsed.path == "/api/pfm/portfolio":
+            pid = (query.get("id", [""])[0] or "").strip().upper()
+            self._guarded(lambda: self._send_json(pfm.portfolio_detail(pid)))
+            return
+        if parsed.path == "/api/health":
+            self._send_json({"ok": True, "firebase_admin": FIREBASE_APP is not None})
+            return
+        if parsed.path == "/api/portfolio":
+            self._portfolio_get()
+            return
+        if parsed.path in PAGE_ROUTES:
+            self.path = "/" + PAGE_ROUTES[parsed.path]
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+
+        if parsed.path == "/api/rebalance":
+            self._guarded(self._rebalance)
+            return
+        if parsed.path == "/api/holdings":
+            self._guarded(self._upsert_holding)
+            return
+        if parsed.path == "/api/holdings/refresh-prices":
+            self._guarded(self._refresh_prices)
+            return
+        if parsed.path == "/api/tickers":
+            self._guarded(self._add_ticker)
+            return
+        if parsed.path == "/api/pfm/rebalance":
+            self._guarded(
+                lambda: self._send_json(
+                    pfm.rebalance_portfolio(
+                        str(self._read_body().get("portfolio_id", "")).strip().upper()
+                    )
+                )
+            )
+            return
+        if parsed.path == "/api/portfolio":
+            self._portfolio_post()
+            return
+
+        self.send_error(404, "Unknown endpoint")
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        if parsed.path == "/api/holdings":
+            ticker = (query.get("ticker", [""])[0] or "").strip().upper()
+            self._guarded(lambda: self._delete_holding(ticker))
+            return
+        self.send_error(404, "Unknown endpoint")
+
+    def _read_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            return {}
+        return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+
+    def _upsert_holding(self) -> None:
+        body = self._read_body()
+        holding = body.get("holding") or body
+        row = upsert_holding(holding)
+        refresh = fetch_latest_prices([row["ticker"]], use_live=True)
+        mark_price_updates(refresh.prices, updated_at=_now_iso())
+        self._send_json({"holding": get_holding(row["ticker"]), "price_source": refresh.source})
+
+    def _refresh_prices(self) -> None:
+        body = self._read_body()
+        use_live = bool(body.get("live", True))
+        ticker = str(body.get("ticker", "")).strip().upper()
+        holdings = list_holdings(include_inactive=False)
+        meta = _refresh_holdings_prices(holdings, use_live, tickers=[ticker] if ticker else None)
+        self._send_json({"ok": True, "meta": meta, "holdings": list_holdings(include_inactive=False)})
+
+    def _delete_holding(self, ticker: str) -> None:
+        if not ticker:
+            raise ValueError("ticker is required")
+        deactivate_holding(ticker)
+        self._send_json({"ok": True})
+
+    def _add_ticker(self) -> None:
+        payload = self._read_body()
+        row = add_ticker_workflow(payload)
+        refresh = fetch_latest_prices([row["ticker"]], use_live=True)
+        mark_price_updates(refresh.prices, updated_at=_now_iso())
+        self._send_json({
+            "ticker": get_holding(row["ticker"]),
+            "price_source": refresh.source,
+            "missing": refresh.missing,
         })
-        st.dataframe(display, hide_index=True, use_container_width=True)
 
-
-# =========================================================================== #
-# Section 4 — Avaloq / VBA Export
-# =========================================================================== #
-elif section == "export":
-    st.markdown(f"#### {tr('export', lang)}")
-    st.caption(tr("export_intro", lang))
-
-    if "trades" not in st.session_state:
-        st.warning(tr("run_rebalance_first", lang))
-        st.stop()
-
-    trades = st.session_state["trades"].copy()
-    active = trades[trades["Trade Value"].abs() > 1.0].copy()
-    active["Side"] = np.where(active["Trade Value"] > 0, "BUY", "SELL")
-    export_df = active[["Instrument", "Side", "Trade Value"]].rename(
-        columns={"Trade Value": "Amount_CHF"}
-    )
-    export_df["Amount_CHF"] = export_df["Amount_CHF"].round(2)
-
-    if export_df.empty:
-        st.info(
-            "No trades required — the portfolio is already at its target weights."
-            if lang == "EN" else
-            "Keine Trades erforderlich — das Portfolio entspricht bereits den "
-            "Zielgewichten."
+    def _rebalance(self) -> None:
+        body = self._read_body()
+        current = {str(k).upper(): float(v) for k, v in (body.get("current") or {}).items()}
+        target = {str(k).upper(): float(v) for k, v in (body.get("target") or {}).items()}
+        value = float(body.get("portfolio_value", 0.0))
+        trades = rebalance_trades(current, target, value)
+        self._send_json(
+            {
+                "portfolio_value": value,
+                "trades": [
+                    {
+                        "instrument": row["Instrument"],
+                        "current_weight": row["Current Weight"] * 100,
+                        "target_weight": row["Target Weight"] * 100,
+                        "drift": row["Drift"] * 100,
+                        "trade_value": row["Trade Value"],
+                        "side": "BUY"
+                        if row["Trade Value"] > 0.5
+                        else ("SELL" if row["Trade Value"] < -0.5 else "HOLD"),
+                    }
+                    for row in trades.to_dict("records")
+                ],
+            }
         )
-        st.stop()
 
-    st.dataframe(export_df, hide_index=True, use_container_width=True)
+    def _portfolio_get(self) -> None:
+        uid = _verify_bearer(self.headers.get("Authorization"))
+        if not FIREBASE_APP:
+            self._send_json({"configured": False}, status=501)
+            return
+        if not uid:
+            self._send_json({"error": "Invalid or missing ID token"}, status=401)
+            return
 
-    csv = export_df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "⬇️ " + tr("download_csv", lang), data=csv,
-        file_name="rotshild_trades_avaloq.csv", mime="text/csv",
+        from firebase_admin import firestore
+
+        doc = firestore.client().collection("users").document(uid).get()
+        self._send_json({"configured": True, "state": doc.to_dict() or None})
+
+    def _portfolio_post(self) -> None:
+        uid = _verify_bearer(self.headers.get("Authorization"))
+        if not FIREBASE_APP:
+            self._send_json({"configured": False}, status=501)
+            return
+        if not uid:
+            self._send_json({"error": "Invalid or missing ID token"}, status=401)
+            return
+
+        from firebase_admin import firestore
+
+        state = self._read_body().get("state") or {}
+        firestore.client().collection("users").document(uid).set(state, merge=True)
+        self._send_json({"ok": True})
+
+    def _guarded(self, fn) -> None:
+        try:
+            fn()
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=500)
+
+    def _send_json(self, payload: dict, status: int = 200) -> None:
+        body = json.dumps(_clean(payload)).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def main() -> None:
+    init_db()
+    server = ThreadingHTTPServer((HOST, PORT), PortfolioHandler)
+    url = f"http://{HOST}:{PORT}/"
+    print(f"Serving Rotshild Portfolio Dashboard at {url}")
+    print(f"Database: {ROOT / 'portfolio.db'}")
+    print(
+        f"Firebase Admin: {'active' if FIREBASE_APP else 'not configured (client-side SDK only)'}"
     )
 
-    # A small VBA snippet that reconstructs the trade blotter as an array.
-    lines = ["Sub LoadTrades()", "    Dim trades As Variant", "    trades = Array( _"]
-    rows = [
-        f'        Array("{r.Instrument}", "{r.Side}", {r.Amount_CHF:.2f})'
-        for r in export_df.itertuples()
-    ]
-    lines.append(", _\n".join(rows) + " _")
-    lines += ["    )", "    ' TODO: route to Avaloq order interface", "End Sub"]
-    st.markdown(f"**{tr('copy_vba', lang)}**")
-    st.code("\n".join(lines), language="vb")
+    if os.environ.get("NO_BROWSER") != "1":
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

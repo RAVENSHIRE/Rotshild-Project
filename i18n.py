@@ -72,6 +72,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "data_source": {"EN": "Data source", "DE": "Datenquelle"},
     "period_covered": {"EN": "Period", "DE": "Zeitraum"},
+    # ---- Web dashboard (frontend) ---- #
+    "nav_dashboard": {"EN": "Dashboard", "DE": "Dashboard"},
+    "nav_allocation": {"EN": "Allocation", "DE": "Allokation"},
+    "nav_news": {"EN": "News", "DE": "Nachrichten"},
+    "nav_desk": {"EN": "PFM Desk", "DE": "PFM-Desk"},
+    "pfm_desk_title": {"EN": "PFM Desk", "DE": "PFM-Desk"},
+    "sign_in": {"EN": "Sign in", "DE": "Anmelden"},
+    "sign_out": {"EN": "Sign out", "DE": "Abmelden"},
+    "holdings": {"EN": "Security-Level Book", "DE": "Positionen auf Einzeltitelebene"},
+    "return_assets": {"EN": "Return Assets", "DE": "Ertragsanlagen"},
+    "diversifying_assets": {"EN": "Diversifying Assets", "DE": "Diversifizierende Anlagen"},
+    "proposed_trades_net": {
+        "EN": "Buys and sells net to zero by construction.",
+        "DE": "Käufe und Verkäufe gleichen sich konstruktionsbedingt aus.",
+    },
     "run_rebalance_first": {
         "EN": "Run the Rebalancing Engine and calculate trades first.",
         "DE": "Führen Sie zuerst die Rebalancing-Engine aus und berechnen Sie die Trades.",
