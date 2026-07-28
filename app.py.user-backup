@@ -1,0 +1,160 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+
+# ==========================================
+# 1. QUANTITATIVE ENGINE (Quant Guild Logic)
+# ==========================================
+
+def fetch_data(tickers, start_date, end_date):
+    """Fetches adjusted close prices from Yahoo Finance."""
+    data = yf.download(tickers, start=start_date, end=end_date)['Adj Close']
+    # Calculate daily returns
+    returns = data.pct_change().dropna()
+    return returns
+
+def calculate_portfolio_returns(returns_df, weights):
+    """Calculates the weighted daily returns of the portfolio."""
+    # Ensure weights sum to 1
+    weights = np.array(weights)
+    weights = weights / np.sum(weights) 
+    port_returns = returns_df.dot(weights)
+    return port_returns
+
+def calculate_performance_metrics(returns, risk_free_rate=0.02):
+    """Calculates CAGR, Volatility, Max Drawdown, Sharpe, and Sortino."""
+    # Volatility Drag & Geometric Return (Video 1 Concept)
+    cumulative_returns = (1 + returns).cumprod()
+    total_return = cumulative_returns.iloc[-1] - 1
+    years = len(returns) / 252
+    cagr = (1 + total_return) ** (1 / years) - 1
+    
+    # Volatility (Standard Deviation)
+    volatility = returns.std() * np.sqrt(252)
+    
+    # Max Drawdown
+    rolling_max = cumulative_returns.cummax()
+    drawdown = cumulative_returns / rolling_max - 1
+    max_drawdown = drawdown.min()
+    
+    # Sharpe Ratio
+    sharpe = (cagr - risk_free_rate) / volatility
+    
+    # Sortino Ratio (Downside deviation only)
+    downside_returns = returns[returns < 0]
+    downside_vol = downside_returns.std() * np.sqrt(252)
+    sortino = (cagr - risk_free_rate) / downside_vol if downside_vol > 0 else np.nan
+    
+    return {
+        "CAGR": cagr,
+        "Volatility": volatility,
+        "Max Drawdown": max_drawdown,
+        "Sharpe Ratio": sharpe,
+        "Sortino Ratio": sortino
+    }
+
+def calculate_rolling_capm(port_returns, bench_returns, window=63):
+    """
+    Calculates rolling 63-day Alpha and Beta (Video 2 Concept).
+    Runs an OLS regression: Portfolio_Return = Alpha + Beta * Benchmark_Return
+    """
+    df = pd.DataFrame({'Portfolio': port_returns, 'Benchmark': bench_returns}).dropna()
+    
+    rolling_betas = []
+    rolling_alphas = []
+    dates = []
+    
+    # Iterate through the data using the rolling window
+    for i in range(window, len(df)):
+        y = df['Portfolio'].iloc[i-window:i]
+        x = sm.add_constant(df['Benchmark'].iloc[i-window:i])
+        
+        # Fit OLS Regression
+        model = sm.OLS(y, x).fit()
+        
+        # Extract Alpha (intercept) and Beta (slope)
+        alpha = model.params.iloc[0]
+        beta = model.params.iloc[1]
+        
+        # Annualize Alpha (assuming daily data)
+        annualized_alpha = (1 + alpha)**252 - 1 
+        
+        rolling_alphas.append(annualized_alpha)
+        rolling_betas.append(beta)
+        dates.append(df.index[i-1])
+        
+    return pd.DataFrame({'Rolling Beta': rolling_betas, 'Annualized Alpha': rolling_alphas}, index=dates)
+
+# ==========================================
+# 2. STREAMLIT FRONTEND / UI DASHBOARD
+# ==========================================
+
+st.set_page_config(page_title="Rothschild Analytics Dashboard", layout="wide")
+
+st.title("Portfolio Management Analytics Engine")
+st.markdown("Inspired by Quant Guild | Built for Rothschild & Co. Portfolio Management")
+
+# Sidebar for Inputs
+st.sidebar.header("Portfolio Parameters")
+tickers_input = st.sidebar.text_input("Enter Tickers (comma separated)", "AAPL, MSFT, NVDA")
+benchmark_input = st.sidebar.text_input("Benchmark", "SPY")
+start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2020-01-01"))
+end_date = st.sidebar.date_input("End Date", pd.to_datetime("today"))
+
+# Parse inputs
+tickers = [t.strip().upper() for t in tickers_input.split(',')]
+all_tickers = tickers + [benchmark_input.upper()]
+
+# App Tabs (Matching the Rothschild Requirements)
+tab1, tab2, tab3 = st.tabs(["Quant Risk & CAPM (Alpha/Beta)", "Portfolio Rebalancing", "Data Export (Excel)"])
+
+if st.sidebar.button("Run Analytics"):
+    with st.spinner("Fetching data and running quantitative models..."):
+        # Fetch Data
+        returns_df = fetch_data(all_tickers, start_date, end_date)
+        
+        # Separate portfolio assets and benchmark
+        port_assets = returns_df[tickers]
+        benchmark_returns = returns_df[benchmark_input.upper()]
+        
+        # Equal weight for simplicity in this skeleton
+        weights = [1/len(tickers)] * len(tickers)
+        port_returns = calculate_portfolio_returns(port_assets, weights)
+        
+        # Calculate Metrics
+        metrics = calculate_performance_metrics(port_returns)
+        bench_metrics = calculate_performance_metrics(benchmark_returns)
+        
+        # Calculate CAPM (Rolling 63-day)
+        capm_df = calculate_rolling_capm(port_returns, benchmark_returns, window=63)
+        
+        with tab1:
+            st.subheader("Performance Metrics vs. Benchmark")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("CAGR", f"{metrics['CAGR']:.2%}", f"{(metrics['CAGR'] - bench_metrics['CAGR']):.2%} vs Bench")
+            col2.metric("Max Drawdown", f"{metrics['Max Drawdown']:.2%}")
+            col3.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
+            col4.metric("Volatility", f"{metrics['Volatility']:.2%}")
+            
+            st.subheader("Rolling 63-Day Alpha & Beta (CAPM)")
+            st.markdown("Tracking undiversifiable risk exposure and idiosyncratic outperformance over time.")
+            st.line_chart(capm_df['Rolling Beta'])
+            st.line_chart(capm_df['Annualized Alpha'])
+            
+            st.subheader("Cumulative Returns (Log Scale)")
+            cum_port = (1 + port_returns).cumprod()
+            cum_bench = (1 + benchmark_returns).cumprod()
+            chart_df = pd.DataFrame({"Portfolio": cum_port, "Benchmark": cum_bench})
+            st.line_chart(chart_df)
+
+        with tab2:
+            st.subheader("Rebalancing Engine")
+            st.info("Here you would implement the optimization algorithm (e.g., using scipy.optimize to find Mean-Variance optimal weights) or allow manual target weight inputs to calculate required trades.")
+            
+        with tab3:
+            st.subheader("Avaloq/VBA Compatible Data Export")
+            st.dataframe(returns_df.tail())
+            # Streamlit download button logic goes here
+            st.button("Download Portfolio Data (.xlsx)")

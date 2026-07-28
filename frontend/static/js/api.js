@@ -1,20 +1,18 @@
 // ------------------------------------------------------------------
-// API layer: portfolio state, backend fetches, formatting helpers.
-// State is always mirrored to localStorage; when a user is signed in
-// it is additionally synced to Firestore via firebase.js.
+// API layer: persisted dashboard controls + backend fetch helpers.
+// Holdings are normalized rows on the backend (one ticker per row).
 // ------------------------------------------------------------------
 import { currentUser, loadCloudState, saveCloudState } from "./firebase.js";
 
 const STATE_KEY = "rotshild-portfolio-state";
 
 export const DEFAULT_STATE = {
-  tickers: ["AAPL", "MSFT", "NVDA", "TLT", "GLD"],
   benchmark: "SPY",
-  riskFree: 2.0, // percent
+  riskFree: 2.0, // annual percent
   lookback: 252,
   live: true,
-  portfolioValue: 5_000_000,
-  targets: null, // {TICKER: percent} once the user sets an allocation
+  bucket: "ALL", // ALL | Return Assets | Diversifying Assets
+  targets: null, // {TICKER: percent}
 };
 
 export function loadState() {
@@ -37,7 +35,6 @@ export async function saveState(state, { cloud = true } = {}) {
   }
 }
 
-/** Pull cloud state (post-login) and merge it over local state. */
 export async function syncFromCloud() {
   const remote = await loadCloudState();
   if (!remote) return null;
@@ -49,19 +46,12 @@ export async function syncFromCloud() {
 
 function query(state) {
   const params = new URLSearchParams({
-    tickers: state.tickers.join(","),
     benchmark: state.benchmark,
     risk_free: String(state.riskFree),
     lookback: String(state.lookback),
     live: state.live ? "1" : "0",
-    portfolio_value: String(state.portfolioValue),
+    bucket: state.bucket || "ALL",
   });
-  if (state.targets) {
-    params.set(
-      "weights",
-      Object.entries(state.targets).map(([t, w]) => `${t}:${w}`).join(",")
-    );
-  }
   return params.toString();
 }
 
@@ -73,8 +63,38 @@ async function getJSON(url, options) {
 }
 
 export const fetchDashboard = (state) => getJSON(`/api/dashboard?${query(state)}`);
-export const fetchNews = (tickers) =>
-  getJSON(`/api/news?tickers=${encodeURIComponent(tickers.join(","))}`);
+export const fetchHoldings = () => getJSON("/api/holdings");
+export const refreshHoldingPrices = (live = true, ticker = null) =>
+  getJSON("/api/holdings/refresh-prices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ live, ...(ticker ? { ticker } : {}) }),
+  });
+export const upsertHolding = (holding) =>
+  getJSON("/api/holdings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ holding }),
+  });
+export const deleteHolding = (ticker) =>
+  getJSON(`/api/holdings?ticker=${encodeURIComponent(ticker)}`, {
+    method: "DELETE",
+  });
+export const addTicker = (payload) =>
+  getJSON("/api/tickers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+export const fetchSectorMap = () => getJSON("/api/sector-map");
+
+export const fetchNews = (tickers = []) => {
+  const q = tickers.length
+    ? `?tickers=${encodeURIComponent(tickers.join(","))}`
+    : "";
+  return getJSON(`/api/news${q}`);
+};
+
 export const postRebalance = (current, target, portfolioValue) =>
   getJSON("/api/rebalance", {
     method: "POST",
@@ -83,7 +103,6 @@ export const postRebalance = (current, target, portfolioValue) =>
   });
 
 // ---- Formatting --------------------------------------------------- //
-/** Escape a value for safe interpolation into innerHTML templates. */
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])

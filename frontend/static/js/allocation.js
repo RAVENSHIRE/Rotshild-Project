@@ -13,6 +13,7 @@ import { initShell } from "./shell.js";
 let state = loadState();
 let holdings = [];           // from /api/dashboard
 let targets = {};            // {TICKER: percent}
+let portfolioValue = 0;
 const $ = (id) => document.getElementById(id);
 
 // ---- Editor ------------------------------------------------------- //
@@ -116,7 +117,7 @@ function renderRollups() {
 async function computeTrades() {
   const current = Object.fromEntries(holdings.map((h) => [h.ticker, h.weight]));
   const target = Object.fromEntries(holdings.map((h) => [h.ticker, targets[h.ticker] ?? h.weight]));
-  const result = await postRebalance(current, target, state.portfolioValue);
+  const result = await postRebalance(current, target, portfolioValue);
   const body = $("trades-table-body");
   body.innerHTML = "";
   for (const t of result.trades) {
@@ -147,6 +148,7 @@ async function load() {
   try {
     const data = await fetchDashboard(state);
     holdings = data.holdings;
+    portfolioValue = data.metrics?.portfolio?.value || 0;
     targets = { ...(state.targets || {}) };
     for (const h of holdings) if (targets[h.ticker] == null) targets[h.ticker] = h.weight;
     pill.textContent = data.source.label;

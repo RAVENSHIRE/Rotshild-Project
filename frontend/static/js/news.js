@@ -1,10 +1,8 @@
 // ------------------------------------------------------------------
 // News page: /api/news feed, holdings-first ordering, filter chips.
 // ------------------------------------------------------------------
-import { esc, fetchNews, loadState, timeAgo } from "./api.js";
+import { esc, fetchHoldings, fetchNews, timeAgo } from "./api.js";
 import { initShell } from "./shell.js";
-
-const state = loadState();
 let items = [];
 let filter = "all";
 
@@ -52,10 +50,20 @@ document.querySelectorAll("#news-filters .chip").forEach((chip) =>
 );
 
 initShell({});
-fetchNews(state.tickers)
-  .then((res) => {
-    items = res.items;
-    render();
+Promise.all([fetchHoldings(), fetchNews()])
+  .then(([holdingsRes, fallbackNews]) => {
+    const heldTickers = (holdingsRes.holdings || [])
+      .filter((h) => (h.quantity || 0) > 0)
+      .map((h) => h.ticker);
+    if (!heldTickers.length) {
+      items = fallbackNews.items;
+      render();
+      return;
+    }
+    return fetchNews(heldTickers).then((res) => {
+      items = res.items;
+      render();
+    });
   })
   .catch((err) => {
     document.getElementById("news-grid").innerHTML =

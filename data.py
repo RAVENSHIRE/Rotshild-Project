@@ -167,6 +167,16 @@ class PriceData:
     source: str                   # "Yahoo Finance (live)" or "Synthetic (offline)"
 
 
+@dataclass
+class LatestPriceResult:
+    """Latest prices for a ticker set plus provenance and failures."""
+
+    prices: dict[str, float | None]
+    source: str
+    synthetic: bool
+    missing: list[str]
+
+
 def asset_class(ticker: str) -> str:
     return ASSET_CLASSES.get(ticker.upper(), "Equities")
 
@@ -230,6 +240,66 @@ def _fetch_live(tickers: list[str], period_days: int) -> pd.DataFrame:
     return close
 
 
+def fetch_latest_prices(tickers: list[str], use_live: bool = True) -> LatestPriceResult:
+    """Fetch latest prices ticker-by-ticker with robust fallback.
+
+    This function is intentionally resilient for onboarding workflows: each
+    ticker is attempted individually, so one failing symbol does not break the
+    entire refresh job.
+    """
+    ordered: list[str] = []
+    for ticker in tickers:
+        symbol = (ticker or "").strip().upper()
+        if symbol and symbol not in ordered:
+            ordered.append(symbol)
+
+    if not ordered:
+        return LatestPriceResult({}, "None", False, [])
+
+    prices: dict[str, float | None] = {t: None for t in ordered}
+    missing: list[str] = []
+
+    if use_live:
+        try:
+            live = _fetch_live(ordered, period_days=30)
+            for ticker in ordered:
+                if ticker in live.columns:
+                    series = live[ticker].dropna()
+                    if not series.empty:
+                        prices[ticker] = float(series.iloc[-1])
+        except Exception:
+            pass
+
+        # Retry symbols that were missing from the bulk request.
+        for ticker in ordered:
+            if prices[ticker] is not None:
+                continue
+            try:
+                single = _fetch_live([ticker], period_days=30)
+                series = single.iloc[:, 0].dropna()
+                if not series.empty:
+                    prices[ticker] = float(series.iloc[-1])
+            except Exception:
+                continue
+
+    for ticker in ordered:
+        if prices[ticker] is None:
+            missing.append(ticker)
+
+    if not missing:
+        return LatestPriceResult(prices, "Yahoo Finance (live)", False, [])
+
+    # If live quotes are incomplete, fill only the missing symbols with
+    # synthetic levels so valuation still works in offline/failure scenarios.
+    synth = _synthetic(missing, period_days=60)
+    for ticker in missing:
+        series = synth[ticker].dropna()
+        prices[ticker] = float(series.iloc[-1]) if not series.empty else None
+
+    still_missing = [ticker for ticker, value in prices.items() if value is None]
+    return LatestPriceResult(prices, "Synthetic fallback", True, still_missing)
+
+
 def _synthetic(tickers: list[str], period_days: int, seed: int = 7) -> pd.DataFrame:
     """Correlated geometric-Brownian-motion prices with a CAPM structure."""
     rng = np.random.default_rng(seed)
@@ -276,9 +346,21 @@ def load_prices(
     if use_live:
         try:
             close = _fetch_live(ordered, period_days)
+            # Attempt to recover any ticker missing from the bulk download.
             missing = [t for t in ordered if t not in close.columns]
-            if not missing and len(close) >= 30:
-                return PriceData(close[ordered], False, "Yahoo Finance (live)")
+            recovered: dict[str, pd.Series] = {}
+            for ticker in missing:
+                try:
+                    single = _fetch_live([ticker], period_days)
+                    recovered[ticker] = single.iloc[:, 0]
+                except Exception:
+                    continue
+
+            for ticker, series in recovered.items():
+                close[ticker] = series
+
+            if all(t in close.columns for t in ordered) and len(close) >= 30:
+                return PriceData(close[ordered].dropna(how="all"), False, "Yahoo Finance (live)")
         except Exception:
             pass  # fall through to synthetic
 

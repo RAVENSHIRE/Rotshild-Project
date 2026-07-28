@@ -1,55 +1,109 @@
 // ------------------------------------------------------------------
-// Dashboard home: hero, controls, security-level book (bottom-up),
-// contribution + CAPM charts, portfolio roll-up.
+// Dashboard home: controls + holdings workflow + analytics roll-ups.
 // ------------------------------------------------------------------
 import {
-  fetchDashboard, loadState, saveState,
-  esc, fmtMoney, fmtPrice, fmtMoneySigned, fmtPct, fmtPctSigned, fmtNum, signClass,
+  addTicker,
+  deleteHolding,
+  esc,
+  fetchDashboard,
+  fetchHoldings,
+  fetchSectorMap,
+  fmtMoney,
+  fmtMoneySigned,
+  fmtNum,
+  fmtPct,
+  fmtPctSigned,
+  fmtPrice,
+  loadState,
+  refreshHoldingPrices,
+  saveState,
+  signClass,
+  upsertHolding,
 } from "./api.js";
 import {
-  lineChart, sparkChart, divergingBar, palette, cssVar, onThemeChange,
+  divergingBar,
+  lineChart,
+  onThemeChange,
+  palette,
+  sparkChart,
+  cssVar,
 } from "./charts.js";
 import { initShell } from "./shell.js";
 
 let state = loadState();
-let data = null;      // last dashboard payload
-let selected = null;  // selected ticker in the holdings table
+let data = null;
+let allHoldings = [];
+let selected = null;
+let sectorMap = {};
 
 const $ = (id) => document.getElementById(id);
 
-// ---- Controls ----------------------------------------------------- //
 function fillForm() {
-  $("tickers-input").value = state.tickers.join(", ");
   $("benchmark-input").value = state.benchmark;
   $("risk-free-input").value = state.riskFree;
   $("lookback-input").value = state.lookback;
   $("live-input").checked = state.live;
-  $("portfolio-value-input").value = state.portfolioValue;
+  $("bucket-input").value = state.bucket || "ALL";
 }
 
 function readForm() {
-  const tickers = $("tickers-input").value.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
-  // Saved targets only stay valid while the instrument list is unchanged.
-  const sameBook =
-    state.targets && tickers.length === state.tickers.length &&
-    tickers.every((t) => state.tickers.includes(t));
   state = {
     ...state,
-    targets: sameBook ? state.targets : null,
-    tickers,
     benchmark: $("benchmark-input").value.trim().toUpperCase() || "SPY",
     riskFree: parseFloat($("risk-free-input").value) || 0,
     lookback: Math.max(30, parseInt($("lookback-input").value, 10) || 252),
     live: $("live-input").checked,
-    portfolioValue: parseFloat($("portfolio-value-input").value) || 1,
+    bucket: $("bucket-input").value || "ALL",
   };
 }
 
-// ---- Rendering ---------------------------------------------------- //
 function setPill(text, mode) {
   const pill = $("data-source-pill");
   pill.textContent = text;
   pill.className = "status-pill " + (mode || "");
+}
+
+function showFormError(message) {
+  $("holdings-form-error").textContent = message || "";
+}
+
+function populateSectorDropdown() {
+  const sectorSelect = $("new-sector");
+  const sectors = Object.keys(sectorMap);
+  sectorSelect.innerHTML = sectors
+    .map((sector) => `<option value="${esc(sector)}">${esc(sector)}</option>`)
+    .join("");
+  if (!sectors.length) {
+    sectorSelect.innerHTML = '<option value="Unclassified">Unclassified</option>';
+  }
+  populateSubSectorDropdown();
+}
+
+function populateSubSectorDropdown() {
+  const sector = $("new-sector").value || "Unclassified";
+  const subSectors = sectorMap[sector] || ["Unclassified"];
+  $("new-sub-sector").innerHTML = subSectors
+    .map((sub) => `<option value="${esc(sub)}">${esc(sub)}</option>`)
+    .join("");
+}
+
+function validateHoldingPayload(payload) {
+  if (!/^[A-Z0-9.=\-]{1,20}$/.test(payload.ticker)) {
+    return "Ticker is invalid. Example: AAPL, NESN.SW, BTC-USD.";
+  }
+  if (!payload.asset_name) {
+    return "Asset name is required.";
+  }
+  if (!Number.isFinite(payload.quantity) || payload.quantity < 0) {
+    return "Quantity must be a number greater than or equal to 0.";
+  }
+  if (!/^[A-Z]{3}$/.test(payload.currency)) {
+    return "Currency must be a 3-letter ISO code, e.g. CHF or USD.";
+  }
+  if (!payload.sector || !payload.sub_sector) {
+    return "Sector and sub-sector are required.";
+  }
+  return "";
 }
 
 function riskProfile(beta) {
@@ -57,6 +111,73 @@ function riskProfile(beta) {
   if (beta < 0.75) return ["Defensive", `Portfolio β ${beta.toFixed(2)} — diversifiers dominate`];
   if (beta < 1.05) return ["Balanced", `Portfolio β ${beta.toFixed(2)} vs benchmark`];
   return ["Growth-tilted", `Portfolio β ${beta.toFixed(2)} — equity risk dominates`];
+}
+
+function renderHoldingsAdmin() {
+  const body = $("holdings-admin-body");
+  body.innerHTML = "";
+  for (const h of allHoldings) {
+    const tr = document.createElement("tr");
+    const bucketCls = h.portfolio_bucket === "Return Assets" ? "return" : "divers";
+    tr.innerHTML = `
+      <td><strong>${esc(h.ticker)}</strong></td>
+      <td>${esc(h.asset_name)}</td>
+      <td><span class="tag ${bucketCls}">${h.portfolio_bucket === "Return Assets" ? "Return" : "Diversifying"}</span></td>
+      <td>${esc(h.sector)}</td>
+      <td>${esc(h.sub_sector)}</td>
+      <td>${esc(h.currency)}</td>
+      <td class="num">${fmtPrice(h.current_price)}</td>
+      <td class="num"><input class="qty-input" data-ticker="${esc(h.ticker)}" type="number" min="0" step="any" value="${Number(h.quantity || 0)}"></td>
+      <td class="num">${h.last_updated ? esc(h.last_updated.slice(0, 19).replace("T", " ")) : "—"}</td>
+      <td class="num">
+        <button class="btn btn-outline mini-btn" data-refresh="${esc(h.ticker)}" type="button">Refresh</button>
+        <button class="btn btn-outline mini-btn" data-delete="${esc(h.ticker)}" type="button">Remove</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+
+  body.querySelectorAll(".qty-input").forEach((input) =>
+    input.addEventListener("change", async () => {
+      const ticker = input.dataset.ticker;
+      const row = allHoldings.find((x) => x.ticker === ticker);
+      if (!row) return;
+      try {
+        showFormError("");
+        await upsertHolding({ ...row, quantity: parseFloat(input.value) || 0 });
+        await load();
+      } catch (err) {
+        showFormError(`Quantity update failed: ${err.message}`);
+        setPill(`Quantity update failed: ${err.message}`, "error");
+      }
+    })
+  );
+
+  body.querySelectorAll("button[data-refresh]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        showFormError("");
+        await refreshHoldingPrices(state.live, btn.dataset.refresh);
+        await load();
+      } catch (err) {
+        showFormError(`Price refresh failed: ${err.message}`);
+        setPill(`Price refresh failed: ${err.message}`, "error");
+      }
+    })
+  );
+
+  body.querySelectorAll("button[data-delete]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        showFormError("");
+        await deleteHolding(btn.dataset.delete);
+        await load();
+      } catch (err) {
+        showFormError(`Delete failed: ${err.message}`);
+        setPill(`Delete failed: ${err.message}`, "error");
+      }
+    })
+  );
 }
 
 function renderHero() {
@@ -84,10 +205,13 @@ function renderHoldings() {
   for (const h of data.holdings) {
     const tr = document.createElement("tr");
     tr.className = "selectable" + (h.ticker === selected ? " selected" : "");
-    const mandateCls = h.mandate === "Return Assets" ? "return" : "divers";
+    const bucketCls = h.portfolio_bucket === "Return Assets" ? "return" : "divers";
     tr.innerHTML = `
-      <td><span class="asset-name"><span class="ticker">${esc(h.ticker)}</span><span class="full">${esc(h.fundamentals.name)} · ${esc(h.fundamentals.sector)}</span></span></td>
-      <td><span class="tag ${mandateCls}">${h.mandate === "Return Assets" ? "Return" : "Diversifying"}</span></td>
+      <td><span class="asset-name"><span class="ticker">${esc(h.ticker)}</span><span class="full">${esc(h.asset_name)} · ${esc(h.sector)} / ${esc(h.sub_sector)}</span></span></td>
+      <td><span class="tag ${bucketCls}">${h.portfolio_bucket === "Return Assets" ? "Return" : "Diversifying"}</span></td>
+      <td class="num">${fmtNum(h.quantity, 2)}</td>
+      <td class="num">${fmtPrice(h.price_chf)}</td>
+      <td class="num">${fmtMoney(h.value)}</td>
       <td class="num ${signClass(h.total_return)}">${fmtPctSigned(h.total_return)}</td>
       <td class="num">${fmtNum(h.beta)}</td>
       <td class="num ${signClass(h.contribution)}">${fmtPctSigned(h.contribution, 2)}</td>
@@ -110,18 +234,20 @@ function renderDetail(h) {
   const f = h.fundamentals;
   const rows = [
     ...f.metrics,
-    ["Last price", fmtPrice(h.price)],
+    ["Last price (native)", `${fmtPrice(h.price)} ${h.currency}`],
+    ["FX to CHF", fmtNum(h.fx_to_chf, 4)],
+    ["Last price (CHF)", fmtPrice(h.price_chf)],
+    ["Quantity", fmtNum(h.quantity, 2)],
+    ["Position value", fmtMoney(h.value)],
     ["1-day move", fmtPctSigned(h.change_24h, 2)],
     ["Beta vs " + data.config.benchmark, fmtNum(h.beta)],
     ["Sharpe (period)", fmtNum(h.sharpe)],
     ["Return contribution", fmtPctSigned(h.contribution, 2)],
-    ["Position value", fmtMoney(h.value)],
-    ["Quantity", fmtNum(h.quantity, 0)],
   ];
   $("security-detail").innerHTML = `
     <h3>Security dossier</h3>
     <div class="d-name">${esc(f.name)}</div>
-    <div class="d-sector">${esc(h.ticker)} · ${esc(f.sector)} · ${esc(f.asset_class)}</div>
+    <div class="d-sector">${esc(h.ticker)} · ${esc(h.sector)} · ${esc(h.sub_sector)} · ${esc(h.portfolio_bucket)}</div>
     <p class="d-thesis">${esc(f.thesis)}</p>
     <div class="metric-rows">
       ${rows.map(([k, v]) => `<div><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join("")}
@@ -154,7 +280,6 @@ function renderCharts() {
   const p = palette();
   const perf = data.charts.performance;
 
-  // Hero sparkline sits on the navy panel in both themes → fixed gold.
   sparkChart("performanceChart", perf.labels, perf.portfolio, cssVar("--gold-soft") || "#c9a558");
 
   lineChart("overviewChart", perf.labels, [
@@ -173,19 +298,29 @@ function renderCharts() {
   ], { yFormat: (v) => fmtNum(v), legend: false });
 }
 
-// ---- Load cycle --------------------------------------------------- //
 async function load() {
   setPill("Loading portfolio data…", "");
   try {
-    data = await fetchDashboard(state);
+    const [dashboard, holdingsRes, sectorRes] = await Promise.all([
+      fetchDashboard(state),
+      fetchHoldings(),
+      fetchSectorMap(),
+    ]);
+    data = dashboard;
+    allHoldings = holdingsRes.holdings || [];
+    sectorMap = sectorRes.sectors || {};
+    populateSectorDropdown();
+
+    renderHoldingsAdmin();
     renderHero();
     renderHoldings();
     renderStats();
     renderCharts();
+
     const src = data.source;
+    const scope = data.config.bucket === "ALL" ? "all buckets" : data.config.bucket;
     setPill(
-      `${src.label} · ${data.config.tickers.length} instruments · ${data.config.lookback}-day window` +
-        (state.targets ? " · custom target weights applied" : " · equal-weight book"),
+      `${src.label} · ${data.holdings.length} holdings · ${scope} · ${data.config.lookback}-day window`,
       src.synthetic ? "synthetic" : "live"
     );
   } catch (err) {
@@ -198,6 +333,50 @@ $("dashboard-form").addEventListener("submit", async (event) => {
   readForm();
   await saveState(state);
   load();
+});
+
+$("refresh-prices-btn").addEventListener("click", async () => {
+  try {
+    await refreshHoldingPrices(state.live);
+    await load();
+  } catch (err) {
+    setPill(`Price refresh failed: ${err.message}`, "error");
+  }
+});
+
+$("add-ticker-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = {
+    ticker: $("new-ticker").value.trim().toUpperCase(),
+    asset_name: $("new-asset-name").value.trim(),
+    quantity: parseFloat($("new-quantity").value) || 0,
+    portfolio_bucket: $("new-bucket").value,
+    sector: $("new-sector").value.trim(),
+    sub_sector: $("new-sub-sector").value.trim(),
+    currency: $("new-currency").value.trim().toUpperCase() || "CHF",
+  };
+  const validationError = validateHoldingPayload(payload);
+  if (validationError) {
+    showFormError(validationError);
+    return;
+  }
+  try {
+    showFormError("");
+    await addTicker(payload);
+    event.target.reset();
+    $("new-bucket").value = "Return Assets";
+    $("new-currency").value = "USD";
+    populateSectorDropdown();
+    await load();
+  } catch (err) {
+    showFormError(`Ticker onboarding failed: ${err.message}`);
+    setPill(`Ticker onboarding failed: ${err.message}`, "error");
+  }
+});
+
+$("new-sector").addEventListener("change", () => {
+  populateSubSectorDropdown();
+  showFormError("");
 });
 
 initShell({

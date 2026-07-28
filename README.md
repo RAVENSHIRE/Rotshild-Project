@@ -37,19 +37,26 @@ frontend/                     ← served by app.py
 
 app.py      ← HTTP routing: pages + JSON API (+ optional firebase-admin endpoints)
 data.py     ← market data (Yahoo live / synthetic fallback), fundamentals, news, mandates
+portfolio_store.py ← SQLite persistence: normalized holdings + ticker onboarding catalog
 quant.py    ← pure analytics: CAGR, drawdown, Sharpe/Sortino, CAPM, contributions, rebalancing
 pfm.py      ← Avaloq-style PFM layer: BP/Container/Position object model,
               restriction engine, target models, compliance-checked rebalancing
 i18n.py     ← EN/DE string table (served at /api/i18n)
 test_quant.py  ← analytics sanity tests
 test_pfm.py    ← restriction/rebalancing engine tests
+test_portfolio_store.py ← holdings-schema and workflow persistence tests
+test_portfolio_calcs.py ← CHF valuation / benchmark comparison utility tests
 ```
 
 ### API
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/api/dashboard` | GET | Full payload: metrics, charts, holdings with fundamentals. Params: `tickers, benchmark, lookback, risk_free, portfolio_value, live, weights` (`AAPL:40,MSFT:60`). |
+| `/api/dashboard` | GET | Full payload from normalized holdings rows. Params: `benchmark, lookback, risk_free, live, bucket` (`ALL`, `Return Assets`, `Diversifying Assets`). Portfolio value is computed automatically as `Σ(price × quantity × FX-to-CHF)`. |
+| `/api/holdings` | GET/POST/DELETE | Holdings CRUD. One row per instrument with ticker, name, quantity, bucket, sector, sub-sector, currency, current price, update timestamp. |
+| `/api/holdings/refresh-prices` | POST | Refreshes live prices for all active holdings (falls back to synthetic when live quotes fail). |
+| `/api/tickers` | GET/POST | Ticker onboarding catalog + automated row creation workflow for new instruments with bucket/sector/sub-sector classification. |
+| `/api/sector-map` | GET | Sector → sub-sector lookup map used by UI dropdowns and backend validation. |
 | `/api/rebalance` | POST | `{current, target, portfolio_value}` → trade blotter (weights renormalised, trades net to zero). |
 | `/api/news` | GET | Feed with `related` flags for held tickers. |
 | `/api/i18n` | GET | EN/DE translation table. |
@@ -66,6 +73,8 @@ pip install -r requirements.txt
 python app.py            # serves http://127.0.0.1:8000/ and opens the browser
 python test_quant.py     # analytics tests
 python test_pfm.py       # restriction/rebalancing engine tests
+python test_portfolio_store.py  # normalized holdings persistence tests
+python test_portfolio_calcs.py  # portfolio CHF valuation utility tests
 ```
 
 Live prices come from Yahoo Finance; without network the app transparently
@@ -94,8 +103,10 @@ reload flow is demonstrable offline.
 ## Methodology notes
 
 - Annualisation uses 252 trading days; Sharpe/Sortino on daily excess returns.
+- The risk-free input is annualized; the quant layer converts it to daily in `quant._daily_rf` for excess-return metrics (Sharpe, Sortino, CAPM alpha/beta).
 - Rolling CAPM: β = cov/var over 63 days, α is the annualised intercept.
 - Contribution ≈ weight × cumulative security return (buy-and-hold attribution).
+- Portfolio valuation currency is CHF: each row is valued as `current_price × quantity × FX(currency→CHF)` and then aggregated.
 - Rebalancing trades are `(target − current) × portfolio value`; net zero.
 - Chart palette (light `#24558F/#B3862F/#BE5488/#12855F`, dark equivalents) is
   validated for colour-vision-deficiency separation and surface contrast.

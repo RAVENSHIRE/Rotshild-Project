@@ -207,6 +207,7 @@ a { color: inherit; text-decoration: none; }
 .btn-secondary { background: transparent; border-color: rgba(255,255,255,0.35); color: var(--hero-ink); }
 .btn-outline { background: transparent; border-color: var(--hairline); color: var(--ink); }
 .btn-outline:hover { border-color: var(--gold); color: var(--gold); }
+.mini-btn { padding: 6px 10px; font-size: 0.72rem; }
 
 /* ---------------------------------------------------------------- */
 /*  Control strip                                                   */
@@ -219,18 +220,20 @@ a { color: inherit; text-decoration: none; }
   gap: 14px 18px; align-items: end;
   box-shadow: 0 12px 30px -18px rgba(11, 22, 45, 0.25);
 }
+.holdings-add-card { grid-template-columns: repeat(4, minmax(140px, 1fr)); }
 .control-field span {
   display: block; font-size: 0.64rem; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 5px;
 }
 .control-field input[type="text"],
 .control-field input[type="number"],
+.control-field select,
 .modal-form input, .auth-form input {
   width: 100%; font: inherit; font-size: 0.9rem; color: var(--ink);
   background: var(--page); border: 1px solid var(--hairline); border-radius: 6px;
   padding: 8px 11px; font-variant-numeric: tabular-nums;
 }
-.control-field input:focus, .auth-form input:focus {
+.control-field input:focus, .control-field select:focus, .auth-form input:focus {
   outline: none; border-color: var(--gold);
 }
 .control-field-inline { display: flex; align-items: center; gap: 8px; padding-bottom: 9px; }
@@ -365,6 +368,7 @@ th.num, td.num { text-align: right; }
 .drift-fill { position: absolute; top: 0; bottom: 0; }
 .actions-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .form-note { font-size: 0.78rem; color: var(--muted); }
+.form-error { font-size: 0.8rem; color: var(--neg); font-weight: 600; grid-column: 1 / -1; min-height: 1.1em; }
 .save-flash { font-size: 0.8rem; color: var(--up); font-weight: 600; }
 
 /* ---------------------------------------------------------------- */
@@ -457,6 +461,7 @@ th.num, td.num { text-align: right; }
 @media (max-width: 960px) {
   .hero-grid, .holdings-layout, .allocation-grid, .news-grid { grid-template-columns: 1fr; }
   .control-card { grid-template-columns: 1fr 1fr; }
+  .holdings-add-card { grid-template-columns: 1fr 1fr; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .detail-card { position: static; }
   .site-nav {
@@ -469,5 +474,6 @@ th.num, td.num { text-align: right; }
 }
 @media (max-width: 560px) {
   .control-card, .stats-grid { grid-template-columns: 1fr; }
+  .holdings-add-card { grid-template-columns: 1fr; }
   .hero h1 { font-size: 1.8rem; }
 }
